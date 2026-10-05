@@ -17,3 +17,4 @@ new_sqlite_classes = ["Room"]
 # ICE_DAILY_CAP = "200"
 # TURN_URLS = "turn:openrelay.example:3478"
 # TURN_SECRET = "<static-auth-secret>"   # prefer a secret, not a var
+# SIGNAL_API_KEY = "<openssl-rand-hex-32>" # gates /api/ice; secret, not a var

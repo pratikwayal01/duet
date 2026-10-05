@@ -2,7 +2,7 @@
 // WS /room/:id, GET /api/room, GET /api/ice, GET /api/health.
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import {
   MAX_MSG_BYTES,
@@ -33,6 +33,22 @@ function turnConfig() {
     ttlSeconds: Number(process.env.TURN_TTL_SECONDS ?? '86400') || 86400,
     dailyCap: Number(process.env.ICE_DAILY_CAP ?? '200') || 200,
   };
+}
+
+// Money endpoint guard: when SIGNAL_API_KEY is set, only callers bearing it
+// get TURN credentials; everyone else gets the P2P-only body (200, no quota
+// consumed). Empty key = open (dev default). Never logged.
+const API_KEY = process.env.SIGNAL_API_KEY || '';
+
+function authorized(req: IncomingMessage, url: URL): boolean {
+  if (API_KEY === '') return true;
+  const header = req.headers.authorization ?? '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const cand = bearer || url.searchParams.get('key') || '';
+  if (cand === '') return false;
+  const a = Buffer.from(cand);
+  const b = Buffer.from(API_KEY);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function clientIp(req: IncomingMessage): string {
@@ -85,8 +101,10 @@ const server = createServer((req, res) => {
       return;
     }
     const cfg = turnConfig();
-    const quota = cfg.urls.length === 0 ? { ok: true, count: 0 } : registry.takeIceQuota(cfg.dailyCap);
-    const { status, body } = mintIceBody(cfg, quota);
+    const authed = authorized(req, url);
+    const effective = authed ? cfg : { ...cfg, urls: [] }; // unauthenticated: P2P-only, no quota consumed
+    const quota = effective.urls.length === 0 ? { ok: true, count: 0 } : registry.takeIceQuota(cfg.dailyCap);
+    const { status, body } = mintIceBody(effective, quota);
     json(res, status, body);
     return;
   }

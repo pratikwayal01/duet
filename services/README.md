@@ -24,7 +24,7 @@ has no protocol type yet — clients assume both-can-control until one ships.
 | ------ | --------- | ------------------------------------------------------------------------ |
 | GET    | /api/room | Mint a 128-bit base32 room id (26 chars). Room materializes on first WS. |
 | WS     | /room/:id | Join (2-conn cap, else 409 + `room-full`), signal relay via `RoomCore`.  |
-| GET    | /api/ice  | TURN credentials (daily cap, per-IP limit) or P2P-only fallback.         |
+| GET    | /api/ice  | TURN credentials (daily cap, per-IP limit) or P2P-only fallback. When `SIGNAL_API_KEY` is set, keyless callers (`Authorization: Bearer <key>` or `?key=`) get the P2P-only body (200, no quota consumed). |
 | GET    | /api/health | Liveness (`{ok:true}`; also Render health check).                      |
 
 ## signal-cf (primary)

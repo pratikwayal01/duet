@@ -534,6 +534,7 @@ and 390 px in both themes.
 | `TURN_USERNAME` / `TURN_PASSWORD` | *(empty)* | Static TURN auth alternative |
 | `TURN_TTL_SECONDS` | `86400` | Credential lifetime |
 | `ICE_DAILY_CAP` | `200` | Max TURN credentials minted per day (hard cap) |
+| `SIGNAL_API_KEY` | *(empty = open)* | Gates `/api/ice`; keyless callers get P2P-only. Generate: `openssl rand -hex 32`. Secret — never commit |
 
 **Web build args:**
 

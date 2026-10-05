@@ -17,6 +17,17 @@ function clientIp(req: Request): string {
   );
 }
 
+// Money-endpoint guard (see docs/threat-model.md §4): when SIGNAL_API_KEY is
+// set, only bearers get TURN creds; others downgrade to P2P-only downstream.
+// Plain comparison is fine here — 256-bit key over a network round-trip.
+function iceAuthorized(req: Request, url: URL, env: Env): boolean {
+  if ((env.SIGNAL_API_KEY ?? '') === '') return true;
+  const header = req.headers.get('Authorization') ?? '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const cand = bearer || url.searchParams.get('key') || '';
+  return cand !== '' && cand === env.SIGNAL_API_KEY;
+}
+
 /** Static CORS: echo allowlisted origin, else '*' when no allowlist configured. */
 function corsHeaders(req: Request, env: Env): Headers {
   const allow = (env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -69,7 +80,10 @@ export default {
       const inner = await stub.fetch(
         new Request(`http://ice${ICE_INTERNAL_PATH}`, {
           method: 'POST',
-          headers: { 'x-client-ip': ip },
+          headers: {
+            'x-client-ip': ip,
+            'x-ice-authorized': iceAuthorized(request, url, env) ? '1' : '0',
+          },
         }),
       );
       return withCors(inner, cors);

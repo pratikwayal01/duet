@@ -20,3 +20,5 @@ services:
         sync: false # e.g. turn:openrelay.example:3478 (empty = P2P-only mode)
       - key: TURN_SECRET
         sync: false # time-limited REST credentials; or TURN_USERNAME/TURN_PASSWORD
+      - key: SIGNAL_API_KEY
+        sync: false # gates /api/ice (generate: openssl rand -hex 32); empty = open

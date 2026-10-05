@@ -30,6 +30,7 @@ export interface Env {
   TURN_USERNAME?: string; // else static credentials
   TURN_PASSWORD?: string;
   TURN_TTL_SECONDS?: string; // default 86400
+  SIGNAL_API_KEY?: string; // when set, /api/ice requires it (else P2P-only downgrade)
 }
 
 interface Attachment {
@@ -194,6 +195,11 @@ export class Room {
     // Internal route: only reachable via worker-internal stub.fetch() —
     // the public router rejects '_' in room ids, so externals can't hit this.
     if (url.pathname === ICE_INTERNAL_PATH) {
+      // Worker passes x-ice-authorized (checked against SIGNAL_API_KEY). When a
+      // key is configured and the caller lacks it: P2P-only, no quota consumed.
+      const keyed = (this.env.SIGNAL_API_KEY ?? '') !== '';
+      const authed = request.headers.get('x-ice-authorized') === '1' || !keyed;
+      if (!authed) return mintIce({ ...this.env, TURN_URLS: '' });
       const noTurn = !(this.env.TURN_URLS ?? '').split(',').map((s) => s.trim()).filter(Boolean).length;
       if (noTurn) return mintIce(this.env); // p2pOnly, no quota consumed
       const cap = Number(this.env.ICE_DAILY_CAP ?? '200') || 200;
