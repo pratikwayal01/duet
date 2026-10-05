@@ -30,7 +30,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (m.cmd === 'duet:join' && m.url && m.roomId) {
     getClient()
       .connect(m.url, m.roomId)
-      .then(() => {
+      .then(async () => {
+        // Mark this socket joined server-side (else intents/relay are dropped
+        // with join-first). Name is a stub until display-name settings land.
+        const clientId = crypto.randomUUID();
+        let name = 'Guest';
+        try {
+          const v = (await chrome.storage.local.get('duet:name'))['duet:name'];
+          if (typeof v === 'string' && v !== '') name = v.slice(0, 64);
+        } catch {
+          /* default stands */
+        }
+        getClient().send({ v: 1, t: 'hello', id: crypto.randomUUID(), clientId, name });
+        await chrome.storage.session.set({ 'duet:room': { roomId: m.roomId, url: m.url, clientId } });
         setToolbarState('waiting');
         reply({ ok: true });
       })

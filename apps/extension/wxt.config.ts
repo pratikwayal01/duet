@@ -22,6 +22,8 @@ export default defineConfig({
       '*://*.hotstar.com/*',
       '*://*.jiohotstar.com/*',
       '*://*.youtube.com/*',
+      // Default signal server: popup fetch (/api/room) + worker WebSocket.
+      'https://duet-jhwt.onrender.com/*',
     ],
     optional_host_permissions: ['*://*/*'],
     side_panel: { default_path: 'sidepanel.html' },

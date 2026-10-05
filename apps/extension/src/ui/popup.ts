@@ -8,8 +8,8 @@ import { iconSvg } from './icons/icons.ts';
 import {
   getBase,
   inviteUrl,
-  makeRoomId,
   makeSecret,
+  mintRoom,
   parseInvite,
   setBase,
   signalUrl,
@@ -19,6 +19,7 @@ type SyncTone = 'ok' | 'warn' | 'danger' | 'muted';
 
 interface RoomSession {
   roomId: string;
+  url?: string;
   // ponytail: signaling (M2) will add peer/sync fields here; until then room
   // presence alone drives the UI and sync details render honest stubs.
   status?: 'connected' | 'reconnecting';
@@ -142,18 +143,25 @@ function wireHome(service: string | null): void {
   void initTheme(el<HTMLButtonElement>('theme'));
 
   el<HTMLButtonElement>('start').addEventListener('click', async () => {
-    const base = await getBase();
-    if (!base) {
-      setStatus('Paste any Duet invite link below first, so we know your server.');
-      el<HTMLInputElement>('link').focus();
-      return;
-    }
-    const roomId = makeRoomId();
     setStatus('Starting your room…');
-    const res = await send('duet:join', { url: signalUrl(base, roomId), roomId });
-    if (res?.ok) {
-      await boot();
-    } else {
+    try {
+      const base = await getBase();
+      const roomId = await mintRoom(base);
+      const secret = makeSecret();
+      const res = await send('duet:join', { url: signalUrl(base, roomId), roomId });
+      if (res?.ok) {
+        const link = inviteUrl(base, roomId, secret);
+        try {
+          await navigator.clipboard.writeText(link);
+          setStatus('Room started — invite link copied, send it to them.');
+        } catch {
+          setStatus('Room started.');
+        }
+        await boot();
+      } else {
+        await boot('lost');
+      }
+    } catch {
       await boot('lost');
     }
   });
@@ -167,10 +175,6 @@ function wireHome(service: string | null): void {
     }
     if (parsed.base) void setBase(parsed.base);
     const base = parsed.base ?? (await getBase());
-    if (!base) {
-      setStatus('Paste a full invite link, not just a code.');
-      return;
-    }
     setStatus('Joining…');
     const res = await send('duet:join', { url: signalUrl(base, parsed.roomId), roomId: parsed.roomId });
     if (res?.ok) {
@@ -295,11 +299,10 @@ function wireLost(): void {
   setStatus('Reconnecting… your place is saved.');
   el<HTMLButtonElement>('retry').addEventListener('click', async () => {
     setStatus('Trying again…');
-    // ponytail: no rejoin URL is retained in M1; a stored room means the worker
-    // still owns it, so re-reading state is the honest retry.
     const room = await readRoom();
-    if (room) {
-      await boot();
+    if (room?.url) {
+      const res = await send('duet:join', { url: room.url, roomId: room.roomId });
+      await boot(res?.ok ? undefined : 'lost');
     } else {
       await boot();
     }

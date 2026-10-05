@@ -1,8 +1,11 @@
 // Room link helpers. Link shape (web/src/lib/room.ts): https://<app>/r/<roomId>#<secret>.
-// Signal URL convention: ws(s)://<app>/api/room?id=<roomId>.
+// Signal WS convention (services/): ws(s)://<host>/room/<roomId> (128-bit base32).
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const BASE_KEY = 'duet:base';
+
+/** Live default so a fresh install can start a room with no prior link. */
+export const DEFAULT_BASE = 'https://duet-jhwt.onrender.com';
 
 function rndB32(bytes: number): string {
   const b = new Uint8Array(bytes);
@@ -46,10 +49,19 @@ export function inviteUrl(base: string, roomId: string, secret: string): string 
 export function signalUrl(base: string, roomId: string): string {
   const u = new URL(base);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-  u.pathname = '/api/room';
+  u.pathname = `/room/${roomId}`;
   u.hash = '';
-  u.search = `?id=${encodeURIComponent(roomId)}`;
+  u.search = '';
   return u.toString();
+}
+
+/** Mint a server-side room id (128-bit base32; local ids are rejected). */
+export async function mintRoom(base: string): Promise<string> {
+  const res = await fetch(`${base.replace(/\/$/, '')}/api/room`);
+  if (!res.ok) throw new Error(`room mint failed: ${res.status}`);
+  const body = (await res.json()) as { id?: string };
+  if (!body.id) throw new Error('room mint failed: bad response');
+  return body.id;
 }
 
 export interface ParsedInvite {
@@ -75,13 +87,14 @@ export function parseInvite(input: string): ParsedInvite {
   return { roomId: /^[A-Z2-9]{4,64}$/.test(code) ? v.trim() : null, secret: null, base: null };
 }
 
-export async function getBase(): Promise<string | null> {
+export async function getBase(): Promise<string> {
   try {
     const v = (await chrome.storage.local.get(BASE_KEY))[BASE_KEY];
-    return typeof v === 'string' ? v : null;
+    if (typeof v === 'string' && v !== '') return v;
   } catch {
-    return null;
+    /* storage unavailable: fall through to default */
   }
+  return DEFAULT_BASE;
 }
 
 export async function setBase(base: string): Promise<void> {
