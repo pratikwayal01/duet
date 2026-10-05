@@ -6,8 +6,8 @@ services:
     name: duet-signal-node
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
+    buildCommand: npm ci && npm run build --workspace @duet/signal-node
+    startCommand: npm start --workspace @duet/signal-node
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
