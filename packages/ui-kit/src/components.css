@@ -85,7 +85,11 @@
   mask: radial-gradient(circle 10px at 0 50%, transparent 98%, black) left / 51% 100% no-repeat,
     radial-gradient(circle 10px at 100% 50%, transparent 98%, black) right / 51% 100% no-repeat;
 }
-.duet-ticket__admit { letter-spacing: 0.3em; text-transform: uppercase; font-size: 0.75rem; color: var(--text-2); }
+.duet-ticket__admit { letter-spacing: 0.3em; text-transform: uppercase; font-size: 0.75rem; color: var(--text-2); margin: 0; }
+.duet-ticket__perf {
+  border: none; border-top: 1px dashed var(--border-strong);
+  margin: var(--space-4) calc(var(--space-6) * -1) 0; opacity: 0.8;
+}
 .duet-ticket__code {
   font-family: var(--font-mono); font-size: 1.75rem;
   letter-spacing: 0.12em; color: var(--text-0); margin: var(--space-4) 0;
@@ -110,6 +114,8 @@
   width: 56px; height: 56px; border-radius: 50%;
   font-size: 1.5rem; cursor: pointer; position: relative;
   box-shadow: var(--shadow-float);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-0);
 }
 .duet-chatfab__dot {
   position: absolute; top: 6px; right: 6px;
@@ -195,3 +201,15 @@
 .duet-empty { text-align: center; padding: var(--space-7) var(--space-5); max-width: 32rem; margin: 0 auto; }
 .duet-empty__title { font-family: var(--font-display); font-size: 2.5rem; line-height: 1.15; margin: 0 0 var(--space-4); color: var(--text-0); font-weight: 500; }
 .duet-empty__body { color: var(--text-1); line-height: 1.45; margin: 0 0 var(--space-5); }
+
+@media (prefers-reduced-motion: reduce) {
+  .duet-avatar.is-speaking, .duet-dot.is-pulsing { animation: none; }
+  .duet-avatar.is-speaking { box-shadow: var(--focus-ring); }
+}
+
+@media (max-width: 390px) {
+  .duet-ticket { padding: var(--space-5) var(--space-4); }
+  .duet-ticket__code { font-size: 1.375rem; }
+  .duet-chat { width: calc(100vw - var(--space-5)); }
+  .duet-empty__title { font-size: 1.75rem; }
+}

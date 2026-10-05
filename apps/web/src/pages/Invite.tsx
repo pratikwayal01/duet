@@ -43,10 +43,12 @@ export function Invite(props: { announce: (m: string) => void }) {
     <div>
       <nav class="web-nav" aria-label="Main">
         <a class="web-brand" href="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <span class="web-brand__mark" aria-hidden="true">▶</span> Duet
+          <span class="web-brand__mark" aria-hidden="true"><span class="web-brand__play" aria-hidden="true" /></span> Duet
         </a>
       </nav>
-      <main class="web-section">
+      <main class="web-section web-invite">
+        <h1 class="web-invite__title">Your ticket for two.</h1>
+        <p class="web-invite__sub">Share the link. Your person joins straight in — no account.</p>
         <TicketCard
           code={link.roomId}
           status={peer ? 'joined' : 'waiting'}

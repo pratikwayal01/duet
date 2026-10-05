@@ -94,15 +94,16 @@ export function TicketCard(props: {
   return (
     <section aria-label="Room invite ticket" class="duet-ticket duet-glass">
       <p class="duet-ticket__admit">Admit two</p>
+      <p aria-hidden="true" class="duet-ticket__perf" />
       <p class="duet-ticket__code" aria-label={`Room code ${props.code}`}>
         {props.code}
       </p>
       <Button variant="primary" onClick={props.onCopy} ariaLabel="Copy invite link">
-        {props.copied ? 'Copied' : 'Copy invite link'}
+        {props.copied ? 'Copied ✓' : 'Copy invite link'}
       </Button>
       <p role="status" class="duet-ticket__status">
         <span aria-hidden="true" class={`duet-dot${props.status === 'waiting' ? ' is-pulsing' : ''}`} />
-        {props.status === 'waiting' ? 'Waiting for your person…' : `${props.peerName ?? 'They'}'re here.`}
+        {props.status === 'waiting' ? 'Waiting for your person…' : `${props.peerName ?? 'They'}'s here.`}
       </p>
     </section>
   );
@@ -149,7 +150,7 @@ export function ChatDock(props: {
         aria-expanded="false"
         class="duet-chatfab duet-glass duet-focusable"
       >
-        <span aria-hidden="true">💬</span>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
         {props.unread > 0 && (
           <span class="duet-chatfab__dot" aria-hidden="true" />
         )}
@@ -373,7 +374,11 @@ export function ThemeToggle(props: { theme: 'dark' | 'light'; onToggle: () => vo
       aria-pressed={props.theme === 'light'}
       class="duet-iconbtn duet-focusable"
     >
-      <span aria-hidden="true">{props.theme === 'dark' ? '☾' : '☀'}</span>
+      {props.theme === 'dark' ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
+      )}
     </button>
   );
 }

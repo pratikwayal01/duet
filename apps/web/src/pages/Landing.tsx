@@ -20,10 +20,10 @@ export function Landing(props: { announce: (m: string) => void }) {
   };
 
   return (
-    <div>
+    <div class="web-landing">
       <nav class="web-nav" aria-label="Main">
         <span class="web-brand">
-          <span class="web-brand__mark" aria-hidden="true">▶</span> Duet
+          <span class="web-brand__mark" aria-hidden="true"><span class="web-brand__play" aria-hidden="true" /></span> Duet
         </span>
         <span class="web-nav__links">
           <a href="https://github.com" rel="noopener">GitHub</a>
@@ -32,7 +32,9 @@ export function Landing(props: { announce: (m: string) => void }) {
         </span>
       </nav>
 
-      <header class="web-hero">
+      <main class="web-hero">
+        <div class="web-hero__beam" aria-hidden="true" />
+        <div class="web-grain" aria-hidden="true" />
         <div class="web-orbs" aria-hidden="true">
           <span class="web-orb web-orb--you" />
           <span class="web-orb web-orb--them" />
@@ -49,9 +51,14 @@ export function Landing(props: { announce: (m: string) => void }) {
             How it works
           </Button>
         </div>
-        <p class="web-hero__modes">○ ○&nbsp;&nbsp;Sync mode · Share mode · Chat · Voice</p>
-        <p class="web-hero__fonts">Fonts self-hosted — no third-party requests.</p>
-      </header>
+        <ul class="web-hero__modes" aria-label="What Duet does">
+          <li>Sync</li>
+          <li>Share</li>
+          <li>Chat</li>
+          <li>Voice</li>
+        </ul>
+        <p class="web-hero__fonts">Private by design. No account, no tracking.</p>
+      </main>
 
       <Dialog open={howOpen} onClose={() => setHowOpen(false)} title="How it works">
         <div class="web-section" style={{ padding: 0 }}>
