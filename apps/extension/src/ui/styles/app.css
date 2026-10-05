@@ -11,7 +11,7 @@
 
 .duet-popup { width: 360px; box-sizing: border-box; }
 
-.popup-wrap { max-height: 520px; overflow: hidden; }
+.popup-wrap { max-height: 520px; min-height: 300px; overflow: hidden; }
 .icon-btn svg { display: block; }
 .icon-sm { min-width: 36px; min-height: 36px; }
 .ctrl-grid {

@@ -60,7 +60,17 @@ export function signalUrl(base: string, roomId: string): string {
 export async function mintRoom(base: string, apiKey?: string): Promise<string> {
   const headers: Record<string, string> = {};
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const res = await fetch(`${base.replace(/\/$/, '')}/api/room`, { headers });
+  let res: Response;
+  try {
+    // Free-tier servers sleep: bound the wait so the popup never hangs.
+    res = await fetch(`${base.replace(/\/$/, '')}/api/room`, {
+      headers,
+      signal: AbortSignal.timeout(25000),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'TimeoutError') throw new Error('waking');
+    throw new Error('unreachable');
+  }
   if (!res.ok) throw new Error(`room mint failed: ${res.status}`);
   const body = (await res.json()) as { id?: string };
   if (!body.id) throw new Error('room mint failed: bad response');

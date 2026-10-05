@@ -124,7 +124,10 @@ function shell(inner: string): string {
     </div>`;
 }
 
-function serviceChip(service: string | null): string {
+function serviceChip(service: string | null, unknownTab: boolean): string {
+  if (unknownTab) {
+    return `<p class="chip" data-tone="muted"><i class="chip-dot" aria-hidden="true">○</i>Open a video site to begin</p>`;
+  }
   return service
     ? `<p class="chip" data-tone="ok"><i class="chip-dot" aria-hidden="true">●</i>${service} · supported</p>`
     : `<p class="chip" data-tone="muted"><i class="chip-dot" aria-hidden="true">○</i>This site isn't supported yet</p>`;
@@ -139,9 +142,9 @@ function syncChip(sync: NonNullable<RoomSession['sync']>): { text: string; tone:
 
 // --- state 1: home -----------------------------------------------------------
 
-function homeView(service: string | null): string {
+function homeView(service: string | null, unknownTab: boolean): string {
   return shell(`
-    ${serviceChip(service)}
+    ${serviceChip(service, unknownTab)}
     <button id="start" class="btn btn-primary" type="button">Start a room</button>
     <form id="join" class="join field">
       <input id="link" type="text" placeholder="Paste invite link…" aria-label="Invite link"
@@ -174,8 +177,10 @@ function wireHome(service: string | null): void {
       } else {
         await boot('lost');
       }
-    } catch {
-      await boot('lost');
+    } catch (e) {
+      await boot('lost', (e as Error)?.message === 'waking'
+        ? 'The free server sleeps when idle — it should be awake now, try again.'
+        : undefined);
     }
   });
 
@@ -299,12 +304,12 @@ function wireRoom(room: RoomSession): void {
 
 // --- state 4: connection lost -------------------------------------------------
 
-function lostView(): string {
+function lostView(hint?: string): string {
   return shell(`
     <section class="section lost" aria-label="Connection lost">
       <p class="lost-title">Reconnecting… your place is saved</p>
       <button id="retry" class="btn btn-primary" type="button">Try again</button>
-      <p class="hint">Check your connection, then try again. Nothing is lost.</p>
+      <p class="hint">${hint ?? 'Check your connection, then try again. Nothing is lost.'}</p>
     </section>`);
 }
 
@@ -326,18 +331,19 @@ function wireLost(): void {
 
 // --- boot ---------------------------------------------------------------------
 
-async function boot(force?: 'lost'): Promise<void> {
+async function boot(force?: 'lost', hint?: string): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
   if (force === 'lost') {
-    app.innerHTML = lostView();
+    app.innerHTML = lostView(hint);
     wireLost();
     return;
   }
   const room = await readRoom();
   if (!room) {
-    const service = detectService(await activeTabUrl());
-    app.innerHTML = homeView(service);
+    const tabUrl = await activeTabUrl();
+    const service = detectService(tabUrl);
+    app.innerHTML = homeView(service, tabUrl === null);
     wireHome(service);
     return;
   }
