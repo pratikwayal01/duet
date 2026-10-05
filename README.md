@@ -50,8 +50,9 @@ servers, no telemetry. Playback never touches our servers.
 
 ## 1. Quickstart
 
-**Prerequisites:** Node 20+, npm (repo also has a `pnpm-workspace.yaml`;
-CI uses pnpm 9 — either works), Docker + Compose for the container path.
+**Prerequisites:** Node 20+, npm 10+ (canonical lockfile is
+`package-lock.json`; a `pnpm-workspace.yaml` is also present for pnpm
+users), Docker + Compose for the container path.
 
 **Fastest path — full stack in containers:**
 
