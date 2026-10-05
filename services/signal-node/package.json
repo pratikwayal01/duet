@@ -1,0 +1,26 @@
+{
+  "name": "@duet/signal-node",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --external:ws --outfile=dist/index.js",
+    "start": "node dist/index.js",
+    "dev": "npm run build && node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@duet/protocol": "file:../../packages/protocol",
+    "@duet/room-core": "file:../../packages/room-core",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.0",
+    "@types/ws": "^8.5.12",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": "20"
+  }
+}

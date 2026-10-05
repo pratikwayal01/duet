@@ -1,0 +1,95 @@
+/* Duet design tokens — source of truth is moodboard.md §4. Components use
+   var() only, never raw hex. Dark is default; light is "daytime blanket". */
+
+:root {
+  color-scheme: dark;
+
+  /* Canvas */
+  --bg-0: #0d0b0a;          /* theatre black, warm */
+  --bg-1: #151210;          /* panels */
+  --bg-2: #1e1916;          /* raised surfaces, chat bubbles (other) */
+  --bg-3: #2a231e;          /* hover, selected */
+  --scrim: rgba(13, 11, 10, 0.62); /* overlays on video */
+
+  /* Text */
+  --text-0: #f6efe7;        /* primary, warm white */
+  --text-1: #cbbfb2;        /* secondary */
+  --text-2: #8f8478;        /* tertiary, timestamps */
+  --text-inverse: #1a1411;
+
+  /* Brand: projector amber */
+  --accent: #f2a65a;
+  --accent-strong: #ff8f3a;
+  --accent-soft: rgba(242, 166, 90, 0.16);
+
+  /* The two people (assigned at join; never red/green only) */
+  --you: #f2a65a;           /* amber */
+  --them: #7fb8c9;          /* dusk teal */
+  --you-soft: rgba(242, 166, 90, 0.16);
+  --them-soft: rgba(127, 184, 201, 0.16);
+
+  /* Status */
+  --ok: #8cc9a1;
+  --warn: #f0c96b;
+  --danger: #ef7b6b;
+
+  /* Lines */
+  --border: rgba(246, 239, 231, 0.10);
+  --border-strong: rgba(246, 239, 231, 0.22);
+  --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--accent);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #fbf6ef; --bg-1: #f3ebe0; --bg-2: #ebe0d1; --bg-3: #e0d2bf;
+  --scrim: rgba(251, 246, 239, 0.72);
+  --text-0: #1f1812; --text-1: #4d4237; --text-2: #7a6d60; --text-inverse: #fbf6ef;
+  --accent: #c8691d; --accent-strong: #a9540f; --accent-soft: rgba(200, 105, 29, 0.14);
+  --you: #c8691d; --them: #2f7d92;
+  --border: rgba(31, 24, 18, 0.12); --border-strong: rgba(31, 24, 18, 0.28);
+}
+
+:root {
+  --radius-s: 8px; --radius-m: 14px; --radius-l: 22px; --radius-pill: 999px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px;
+
+  --shadow-float: 0 8px 30px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.04) inset;
+  --blur-glass: saturate(120%) blur(14px);
+
+  --ease-out: cubic-bezier(.2,.7,.2,1);
+  --dur-fast: 150ms; --dur-base: 240ms; --dur-slow: 380ms;
+
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Glass overlays: solid fallback first, blur only where supported. */
+.duet-glass {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .duet-glass {
+    background: var(--scrim);
+    backdrop-filter: var(--blur-glass);
+    -webkit-backdrop-filter: var(--blur-glass);
+  }
+}
+
+/* Visible focus on every interactive element. */
+.duet-focusable:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Screen-reader-only (aria-live region, labels). */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  clip-path: inset(50%); overflow: hidden; white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

@@ -1,0 +1,91 @@
+/* @duet/web page styles. Tokens via var() only. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  clip-path: inset(50%); overflow: hidden; white-space: nowrap;
+}
+
+.web-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  max-width: 72rem; margin: 0 auto;
+}
+.web-brand { display: flex; align-items: center; gap: var(--space-2); font-weight: 700; font-size: 1.125rem; }
+.web-brand__mark { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); border: 2px solid var(--accent); display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; color: var(--accent); }
+.web-nav__links { display: flex; align-items: center; gap: var(--space-2); }
+.web-nav__links a { color: var(--text-1); text-decoration: none; padding: var(--space-2) var(--space-3); border-radius: var(--radius-s); min-height: 44px; display: inline-flex; align-items: center; }
+.web-nav__links a:hover { color: var(--text-0); }
+
+/* Landing hero: projector beam + two drifting circles */
+.web-hero {
+  position: relative; overflow: hidden;
+  text-align: center; padding: var(--space-7) var(--space-5);
+  max-width: 72rem; margin: 0 auto;
+}
+.web-hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(242, 166, 90, 0.08), transparent 60%);
+}
+.web-orbs { position: absolute; inset: 0; pointer-events: none; }
+.web-orb { position: absolute; width: 180px; height: 180px; border-radius: 50%; filter: blur(60px); opacity: 0.5; }
+.web-orb--you { background: var(--you); left: 12%; top: 20%; animation: duet-drift-a 9s var(--ease-out) infinite alternate; }
+.web-orb--them { background: var(--them); right: 12%; top: 20%; animation: duet-drift-b 11s var(--ease-out) infinite alternate; }
+@keyframes duet-drift-a { to { transform: translate(60px, 20px); } }
+@keyframes duet-drift-b { to { transform: translate(-60px, 20px); } }
+.web-hero__title {
+  position: relative; font-family: var(--font-display); font-weight: 500;
+  font-size: 2.5rem; line-height: 1.15; margin: 0 0 var(--space-4);
+}
+.web-hero__sub { position: relative; color: var(--text-1); font-size: 1.125rem; margin: 0 0 var(--space-5); }
+.web-hero__cta { position: relative; display: flex; gap: var(--space-3); justify-content: center; flex-wrap: wrap; }
+.web-hero__modes { position: relative; margin-top: var(--space-6); color: var(--text-2); font-size: 0.875rem; }
+.web-hero__fonts { position: relative; margin-top: var(--space-3); color: var(--text-2); font-size: 0.75rem; font-family: var(--font-mono); }
+
+.web-section { max-width: 44rem; margin: 0 auto; padding: var(--space-6) var(--space-5); color: var(--text-1); line-height: 1.45; }
+.web-section h2 { font-family: var(--font-display); color: var(--text-0); font-weight: 500; }
+
+/* Room page */
+.web-room { position: relative; min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg-0); }
+.web-room__bar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
+}
+.web-room__title { font-family: var(--font-mono); letter-spacing: 0.12em; color: var(--text-0); }
+.web-room__spacer { flex: 1; }
+.web-stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; min-height: 40vh; }
+.web-stage video { width: 100%; max-height: 70dvh; background: var(--bg-0); }
+.web-stage.is-dim video { opacity: 0.6; }
+.web-stage__overlay { position: absolute; inset: var(--space-4); display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.web-stage__overlay > * { pointer-events: auto; }
+.web-room__dock { position: absolute; right: var(--space-4); bottom: 5.5rem; z-index: 5; }
+.web-room__foot {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+.web-room__presence { display: flex; gap: var(--space-2); }
+.web-room__scrub { flex: 1; display: flex; align-items: center; gap: var(--space-3); min-width: 12rem; }
+.web-room__scrub input[type="range"] { flex: 1; accent-color: var(--accent); min-height: 44px; }
+.web-room__time { font-family: var(--font-mono); color: var(--text-1); font-size: 0.875rem; }
+.web-room__toasts { position: fixed; bottom: var(--space-5); left: 50%; transform: translateX(-50%); z-index: 20; display: flex; flex-direction: column; gap: var(--space-2); align-items: center; }
+
+/* DRM calm card */
+.web-drm { max-width: 30rem; text-align: center; padding: var(--space-6); border-radius: var(--radius-l); }
+.web-drm h2 { font-family: var(--font-display); font-weight: 500; margin: 0 0 var(--space-3); }
+.web-drm p { color: var(--text-1); line-height: 1.45; }

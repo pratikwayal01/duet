@@ -1,0 +1,7 @@
+.opencode/*
+node_modules/
+dist/
+.wxt/
+.wrangler/
+.dev.vars
+*.local

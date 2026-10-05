@@ -1,0 +1,19 @@
+name = "duet-signal"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# One SQLite-backed Durable Object per room (Workers Free plan).
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+# Optional vars (set via `wrangler secret` / dashboard for secrets):
+# [vars]
+# ALLOWED_ORIGINS = "https://your-app.vercel.app"
+# ICE_DAILY_CAP = "200"
+# TURN_URLS = "turn:openrelay.example:3478"
+# TURN_SECRET = "<static-auth-secret>"   # prefer a secret, not a var

@@ -1,0 +1,35 @@
+services:
+  signal:
+    build:
+      context: .
+      dockerfile: ./services/signal-node/Dockerfile
+    ports:
+      - "${SIGNAL_PORT:-8787}:8787"
+    environment:
+      PORT: "8787"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      TURN_URLS: "${TURN_URLS:-}"
+      TURN_SECRET: "${TURN_SECRET:-}"
+      TURN_USERNAME: "${TURN_USERNAME:-}"
+      TURN_PASSWORD: "${TURN_PASSWORD:-}"
+      ICE_DAILY_CAP: "${ICE_DAILY_CAP:-200}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+      args:
+        # Empty = same-origin (nginx proxies /api + /room to `signal`).
+        VITE_SIGNAL_URL: "${VITE_SIGNAL_URL:-}"
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      signal:
+        condition: service_healthy
+    restart: unless-stopped

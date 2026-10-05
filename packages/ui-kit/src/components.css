@@ -1,0 +1,197 @@
+/* @duet/ui-kit component styles. Tokens only via var() — no raw hex. */
+
+.duet-btn, .duet-iconbtn, .duet-chatfab, .duet-seg__opt,
+.duet-switchrow, .duet-stats__toggle {
+  font-family: var(--font-ui);
+  min-height: 44px;
+}
+.duet-btn:focus-visible, .duet-iconbtn:focus-visible, .duet-chatfab:focus-visible,
+.duet-seg__opt:focus-visible, .duet-switchrow:focus-visible,
+.duet-stats__toggle:focus-visible, .duet-chat__input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Buttons */
+.duet-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: 1rem; font-weight: 600; cursor: pointer;
+  transition: background var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.duet-btn:active { transform: scale(0.98); }
+.duet-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.duet-btn--primary { background: var(--accent); color: var(--text-inverse); }
+.duet-btn--primary:hover { background: var(--accent-strong); }
+.duet-btn--secondary { background: var(--bg-2); color: var(--text-0); border-color: var(--border-strong); }
+.duet-btn--secondary:hover { background: var(--bg-3); }
+.duet-btn--ghost { background: transparent; color: var(--text-1); }
+.duet-btn--ghost:hover { background: var(--accent-soft); color: var(--text-0); }
+.duet-btn--danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+.duet-btn--danger:hover { background: var(--bg-3); }
+
+.duet-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; border-radius: var(--radius-pill);
+  background: transparent; border: none; color: var(--text-1);
+  font-size: 1.125rem; cursor: pointer;
+}
+.duet-iconbtn:hover { background: var(--bg-3); color: var(--text-0); }
+
+/* Chips */
+.duet-chip {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: 0.875rem; border: 1px solid var(--border);
+  background: var(--bg-2); color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.duet-chip--ok { color: var(--ok); border-color: var(--ok); }
+.duet-chip--warn { color: var(--warn); border-color: var(--warn); }
+.duet-chip--danger { color: var(--danger); border-color: var(--danger); }
+
+/* Avatars + presence */
+.duet-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-weight: 700;
+  border: 2px solid transparent; flex: none;
+}
+.duet-avatar--you { border-color: var(--you); color: var(--you); background: var(--you-soft); }
+.duet-avatar--them { border-color: var(--them); color: var(--them); background: var(--them-soft); }
+.duet-avatar.is-speaking { animation: duet-pulse var(--dur-slow) var(--ease-out) infinite alternate; }
+@keyframes duet-pulse { from { box-shadow: none; } to { box-shadow: var(--focus-ring); } }
+
+.duet-presence {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--bg-1); border: 1px solid var(--border);
+  font-size: 0.875rem; color: var(--text-1);
+}
+.duet-presence__control { color: var(--accent); margin-left: var(--space-1); }
+
+/* Ticket stub */
+.duet-ticket {
+  border-radius: var(--radius-l);
+  padding: var(--space-6);
+  max-width: 26rem; margin: 0 auto; text-align: center;
+  box-shadow: var(--shadow-float);
+  /* scalloped edge hint */
+  -webkit-mask: radial-gradient(circle 10px at 0 50%, transparent 98%, black) left / 51% 100% no-repeat,
+    radial-gradient(circle 10px at 100% 50%, transparent 98%, black) right / 51% 100% no-repeat;
+  mask: radial-gradient(circle 10px at 0 50%, transparent 98%, black) left / 51% 100% no-repeat,
+    radial-gradient(circle 10px at 100% 50%, transparent 98%, black) right / 51% 100% no-repeat;
+}
+.duet-ticket__admit { letter-spacing: 0.3em; text-transform: uppercase; font-size: 0.75rem; color: var(--text-2); }
+.duet-ticket__code {
+  font-family: var(--font-mono); font-size: 1.75rem;
+  letter-spacing: 0.12em; color: var(--text-0); margin: var(--space-4) 0;
+}
+.duet-ticket__status { display: flex; align-items: center; justify-content: center; gap: var(--space-2); color: var(--text-1); }
+.duet-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.duet-dot.is-pulsing { background: var(--warn); animation: duet-pulse var(--dur-slow) var(--ease-out) infinite alternate; }
+
+/* Chat */
+.duet-msg { margin-bottom: var(--space-3); max-width: 90%; }
+.duet-msg.is-own { margin-left: auto; text-align: right; }
+.duet-msg__meta { font-size: 0.75rem; color: var(--text-2); margin: 0 0 var(--space-1); }
+.duet-msg__bubble {
+  display: inline-block; margin: 0; padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-m); background: var(--them-soft); color: var(--text-0);
+  font-size: 1rem; line-height: 1.45; text-align: left;
+  border: 1px solid var(--border);
+}
+.duet-msg.is-own .duet-msg__bubble { background: var(--you-soft); }
+
+.duet-chatfab {
+  width: 56px; height: 56px; border-radius: 50%;
+  font-size: 1.5rem; cursor: pointer; position: relative;
+  box-shadow: var(--shadow-float);
+}
+.duet-chatfab__dot {
+  position: absolute; top: 6px; right: 6px;
+  width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+}
+.duet-chat {
+  width: 320px; max-width: calc(100vw - var(--space-6));
+  height: min(480px, 70vh); border-radius: var(--radius-l);
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: var(--shadow-float);
+}
+.duet-chat__head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-bottom: 1px solid var(--border); color: var(--text-0); }
+.duet-chat__list { flex: 1; overflow-y: auto; padding: var(--space-3) var(--space-4); }
+.duet-chat__empty { color: var(--text-2); font-size: 0.875rem; text-align: center; }
+.duet-chat__form { display: flex; gap: var(--space-2); padding: var(--space-3); border-top: 1px solid var(--border); }
+.duet-chat__input {
+  flex: 1; min-width: 0; min-height: 44px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-pill);
+  padding: 0 var(--space-4); color: var(--text-0); font-size: 1rem; font-family: var(--font-ui);
+}
+
+/* Toast */
+.duet-toast {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-m);
+  color: var(--text-0); box-shadow: var(--shadow-float);
+  max-width: 28rem;
+}
+.duet-toast--warn { border-color: var(--warn); }
+
+/* Switch */
+.duet-switchrow {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  width: 100%; background: none; border: none; color: var(--text-0);
+  font-size: 1rem; cursor: pointer; padding: var(--space-2) 0; border-radius: var(--radius-s);
+}
+.duet-switch {
+  width: 52px; height: 32px; border-radius: var(--radius-pill);
+  background: var(--bg-3); border: 1px solid var(--border-strong);
+  display: inline-flex; align-items: center; padding: 3px; flex: none;
+  transition: background var(--dur-base) var(--ease-out);
+}
+.duet-switch.is-on { background: var(--accent); }
+.duet-switch__knob { width: 24px; height: 24px; border-radius: 50%; background: var(--text-0); transition: transform var(--dur-base) var(--ease-out); }
+.duet-switch.is-on .duet-switch__knob { transform: translateX(20px); background: var(--text-inverse); }
+
+/* Segmented */
+.duet-seg { display: inline-flex; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: var(--space-1); }
+.duet-seg__opt {
+  border: none; background: transparent; color: var(--text-1);
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill);
+  font-size: 0.875rem; cursor: pointer;
+}
+.duet-seg__opt.is-selected { background: var(--bg-3); color: var(--text-0); }
+
+/* Dialog */
+.duet-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center; padding: var(--space-4);
+  background: var(--scrim);
+}
+.duet-dialog { border-radius: var(--radius-l); padding: var(--space-6); max-width: 28rem; width: 100%; box-shadow: var(--shadow-float); }
+.duet-dialog__title { font-family: var(--font-display); font-size: 1.75rem; margin: 0 0 var(--space-4); color: var(--text-0); }
+
+/* Control banner (highest z, always visible kill switch) */
+.duet-controlbanner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center; gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent); color: var(--text-inverse);
+  font-size: 0.875rem; font-weight: 600;
+}
+.duet-controlbanner kbd { font-family: var(--font-mono); }
+
+/* Stats */
+.duet-stats { font-family: var(--font-mono); font-size: 0.875rem; color: var(--text-1); }
+.duet-stats__toggle { background: none; border: none; color: inherit; font: inherit; cursor: pointer; padding: var(--space-2) 0; }
+.duet-stats__list { margin: var(--space-2) 0 0; }
+.duet-stats__row { display: flex; justify-content: space-between; gap: var(--space-4); padding: var(--space-1) 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.duet-stats__row dd { margin: 0; color: var(--text-0); }
+
+/* Empty state */
+.duet-empty { text-align: center; padding: var(--space-7) var(--space-5); max-width: 32rem; margin: 0 auto; }
+.duet-empty__title { font-family: var(--font-display); font-size: 2.5rem; line-height: 1.15; margin: 0 0 var(--space-4); color: var(--text-0); font-weight: 500; }
+.duet-empty__body { color: var(--text-1); line-height: 1.45; margin: 0 0 var(--space-5); }

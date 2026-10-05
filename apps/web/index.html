@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Duet — watch together, even when you're apart. Free, open source, just the two of you." />
+    <title>Duet — watch together</title>
+    <script>
+      try {
+        var t = localStorage.getItem('duet-theme');
+        if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+      } catch (e) { /* ponytail: storage may be blocked, dark default stands */ }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="live" class="sr-only" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+dist
+.wxt
+.wrangler
+.dev.vars
+*.local
+.git
+.opencode/node_modules

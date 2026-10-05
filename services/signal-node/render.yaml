@@ -1,0 +1,22 @@
+# Render fallback for Duet signaling (secondary — Cloudflare DO is primary).
+# Free web services spin down when idle and take a while to wake [verify],
+# so expect a slow first join after idleness.
+services:
+  - type: web
+    name: duet-signal-node
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: ALLOWED_ORIGINS
+        sync: false # e.g. https://your-app.vercel.app (empty = '*', dev only)
+      - key: ICE_DAILY_CAP
+        value: "200"
+      - key: TURN_URLS
+        sync: false # e.g. turn:openrelay.example:3478 (empty = P2P-only mode)
+      - key: TURN_SECRET
+        sync: false # time-limited REST credentials; or TURN_USERNAME/TURN_PASSWORD
