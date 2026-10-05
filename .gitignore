@@ -4,4 +4,6 @@ dist/
 .wxt/
 .wrangler/
 .dev.vars
+.env
 *.local
+!.env.example
