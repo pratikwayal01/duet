@@ -1,4 +1,5 @@
 import { RoomClient } from './room-client.ts';
+import { setToolbarState } from './toolbar.ts';
 
 // Event-driven MV3 service worker: allowed to suspend, zero resident cost
 // when idle (PRD §5.7). No setInterval / long timers here — the control loop
@@ -29,7 +30,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (m.cmd === 'duet:join' && m.url && m.roomId) {
     getClient()
       .connect(m.url, m.roomId)
-      .then(() => reply({ ok: true }))
+      .then(() => {
+        setToolbarState('waiting');
+        reply({ ok: true });
+      })
       .catch(() => reply({ ok: false }));
     return true;
   }
@@ -38,6 +42,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       .close()
       .then(() => {
         client = null;
+        setToolbarState('idle');
         reply({ ok: true });
       });
     return true;

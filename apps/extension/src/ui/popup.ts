@@ -1,18 +1,61 @@
-// Popup before joining: Start a room / Join with link / status line (moodboard §5.4).
-// Wires to the existing message protocol in background/service-worker.ts:
-// sends `duet:join { url, roomId }`. Never touches adapters/content/web.
+// Popup launcher/remote: 360px wide, no scrolling. Chat/voice/video live in the
+// side panel, not here. State is owned by the background worker
+// (chrome.storage.session + `duet:join` / `duet:leave`); this file only reads it,
+// builds UI on open, and dies on close. Closing the popup never ends a room.
 
 import { initTheme } from './theme.ts';
+import { iconSvg } from './icons/icons.ts';
 import {
   getBase,
   inviteUrl,
   makeRoomId,
   makeSecret,
-  makeTicketCode,
   parseInvite,
   setBase,
   signalUrl,
 } from './room-link.ts';
+
+type SyncTone = 'ok' | 'warn' | 'danger' | 'muted';
+
+interface RoomSession {
+  roomId: string;
+  // ponytail: signaling (M2) will add peer/sync fields here; until then room
+  // presence alone drives the UI and sync details render honest stubs.
+  status?: 'connected' | 'reconnecting';
+  peerName?: string;
+  title?: string;
+  episode?: string;
+  peerEpisode?: string;
+  sync?: 'synced' | 'catching' | 'waiting';
+}
+
+const SESSION_KEY = 'duet:room';
+
+// ponytail: lightweight URL matchers duplicated from adapters/* so the popup
+// bundle stays small (importing adapters would pull player code in here).
+const SERVICES: { label: string; test: (u: URL) => boolean }[] = [
+  { label: 'Netflix', test: (u) => u.hostname.endsWith('netflix.com') && u.pathname.startsWith('/watch/') },
+  { label: 'YouTube', test: (u) => u.hostname.endsWith('youtube.com') && u.pathname === '/watch' },
+  {
+    label: 'Prime Video',
+    test: (u) =>
+      /(^|\.)amazon\./.test(u.hostname) || u.hostname.endsWith('primevideo.com'),
+  },
+  {
+    label: 'JioHotstar',
+    test: (u) => u.hostname.endsWith('hotstar.com') || u.hostname.endsWith('jiohotstar.com'),
+  },
+];
+
+function detectService(href: string | null): string | null {
+  if (!href) return null;
+  try {
+    const u = new URL(href);
+    return SERVICES.find((s) => s.test(u))?.label ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function el<T extends HTMLElement>(id: string): T {
   const n = document.getElementById(id);
@@ -20,107 +63,273 @@ function el<T extends HTMLElement>(id: string): T {
   return n as T;
 }
 
-async function join(url: string, roomId: string): Promise<boolean> {
+async function send(cmd: string, extra: Record<string, string> = {}): Promise<{ ok?: boolean } | null> {
   try {
-    const res = (await chrome.runtime.sendMessage({ cmd: 'duet:join', url, roomId })) as {
-      ok?: boolean;
-    } | null;
-    return !!res?.ok;
+    return (await chrome.runtime.sendMessage({ cmd, ...extra })) as { ok?: boolean } | null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-function showTicket(roomId: string, link: string | null, copyLabel: string) {
-  const ticket = el<HTMLElement>('ticket');
-  ticket.hidden = false;
-  el<HTMLElement>('ticket-code').textContent = roomId;
-  const copy = el<HTMLButtonElement>('copy');
-  copy.textContent = copyLabel;
-  copy.onclick = () => {
-    const text = link ?? roomId;
-    void navigator.clipboard?.writeText(text).catch(() => {});
-    el<HTMLElement>('status').textContent = link ? 'Invite link copied.' : 'Code copied.';
-  };
-  if (link) {
-    copy.dataset.link = link;
-  } else {
-    delete copy.dataset.link;
+async function readRoom(): Promise<RoomSession | null> {
+  try {
+    const v = (await chrome.storage.session.get(SESSION_KEY))[SESSION_KEY] as RoomSession | undefined;
+    return v && typeof v.roomId === 'string' ? v : null;
+  } catch {
+    return null;
   }
 }
 
-function mount() {
-  const app = document.getElementById('app');
-  if (!app) return;
-  app.innerHTML = `
-    <div class="wrap">
+async function activeTabUrl(): Promise<string | null> {
+  try {
+    const tabs = (chrome as unknown as {
+      tabs?: { query: (q: object) => Promise<{ url?: string }[]> };
+    }).tabs;
+    const [tab] = (await tabs?.query({ active: true, currentWindow: true })) ?? [];
+    return tab?.url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setStatus(msg: string): void {
+  el<HTMLElement>('statusline').textContent = msg;
+}
+
+function shell(inner: string): string {
+  return `
+    <div class="wrap popup-wrap">
       <div class="brand-row">
         <div class="brand" aria-label="Duet">
           <span class="mark" aria-hidden="true"></span>
           <span class="wordmark">Duet</span>
         </div>
-        <button id="theme" class="icon-btn" type="button" aria-pressed="false" aria-label="Toggle light theme">☾</button>
+        <button id="theme" class="icon-btn icon-sm" type="button" aria-pressed="false" aria-label="Toggle light theme">${iconSvg('moon', 18)}</button>
       </div>
-      <button id="start" class="btn btn-primary" type="button">Start a room</button>
-      <div class="divider" aria-hidden="true">or</div>
-      <form id="join" class="join field">
-        <input id="link" type="text" placeholder="Paste invite link…" aria-label="Invite link"
-          autocomplete="off" spellcheck="false" />
-        <button class="btn btn-secondary" type="submit">Join</button>
-      </form>
-      <section id="ticket" class="ticket ticket-stub" hidden>
-        <p class="ticket-kicker">ADMIT TWO</p>
-        <p id="ticket-code" class="ticket-code" aria-label="Room code"></p>
-        <button id="copy" class="btn btn-secondary" type="button">Copy invite link</button>
-      </section>
-      <p id="status" class="status" role="status"></p>
+      ${inner}
+      <p id="statusline" class="status" role="status"></p>
     </div>`;
-  const status = el<HTMLElement>('status');
+}
+
+function serviceChip(service: string | null): string {
+  return service
+    ? `<p class="chip" data-tone="ok"><i class="chip-dot" aria-hidden="true">●</i>${service} · supported</p>`
+    : `<p class="chip" data-tone="muted"><i class="chip-dot" aria-hidden="true">○</i>This site isn't supported yet</p>`;
+}
+
+function syncChip(sync: NonNullable<RoomSession['sync']>): { text: string; tone: SyncTone; dot: string } {
+  // Text + color together; never color alone.
+  if (sync === 'catching') return { text: 'Catching up…', tone: 'warn', dot: '◐' };
+  if (sync === 'waiting') return { text: 'Waiting to buffer', tone: 'warn', dot: '⏸' };
+  return { text: 'Synced', tone: 'ok', dot: '●' };
+}
+
+// --- state 1: home -----------------------------------------------------------
+
+function homeView(service: string | null): string {
+  return shell(`
+    ${serviceChip(service)}
+    <button id="start" class="btn btn-primary" type="button">Start a room</button>
+    <form id="join" class="join field">
+      <input id="link" type="text" placeholder="Paste invite link…" aria-label="Invite link"
+        autocomplete="off" spellcheck="false" />
+      <button class="btn btn-secondary" type="submit">Join</button>
+    </form>`);
+}
+
+function wireHome(service: string | null): void {
+  void service;
   void initTheme(el<HTMLButtonElement>('theme'));
 
   el<HTMLButtonElement>('start').addEventListener('click', async () => {
     const base = await getBase();
     if (!base) {
-      // No server known yet: the first paste of any Duet link teaches us the base.
-      status.textContent = 'Paste any Duet invite link below first, so we know your server.';
+      setStatus('Paste any Duet invite link below first, so we know your server.');
       el<HTMLInputElement>('link').focus();
       return;
     }
     const roomId = makeRoomId();
-    const link = inviteUrl(base, roomId, makeSecret());
-    status.textContent = 'Starting your room…';
-    if (await join(signalUrl(base, roomId), roomId)) {
-      showTicket(makeTicketCode(), link, 'Copy invite link');
-      status.textContent = 'Waiting for your person…';
+    setStatus('Starting your room…');
+    const res = await send('duet:join', { url: signalUrl(base, roomId), roomId });
+    if (res?.ok) {
+      await boot();
     } else {
-      status.textContent = "That didn't work. Try again, or check the help page.";
+      await boot('lost');
     }
   });
 
   el<HTMLFormElement>('join').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const raw = el<HTMLInputElement>('link').value;
-    const parsed = parseInvite(raw);
+    const parsed = parseInvite(el<HTMLInputElement>('link').value);
     if (!parsed.roomId) {
-      status.textContent = "That didn't work. Try again, or check the help page.";
+      setStatus("That didn't work. Try again, or check the help page.");
       return;
     }
     if (parsed.base) void setBase(parsed.base);
     const base = parsed.base ?? (await getBase());
     if (!base) {
-      status.textContent = 'Paste a full invite link, not just a code.';
+      setStatus('Paste a full invite link, not just a code.');
       return;
     }
-    status.textContent = 'Joining…';
-    const url = signalUrl(base, parsed.roomId);
-    if (await join(url, parsed.roomId)) {
-      const link = parsed.secret ? inviteUrl(base, parsed.roomId, parsed.secret) : null;
-      showTicket(parsed.roomId, link, link ? 'Copy invite link' : 'Copy code');
-      status.textContent = 'Waiting for your person…';
+    setStatus('Joining…');
+    const res = await send('duet:join', { url: signalUrl(base, parsed.roomId), roomId: parsed.roomId });
+    if (res?.ok) {
+      await boot();
     } else {
-      status.textContent = "That didn't work. Try again, or check the help page.";
+      await boot('lost');
     }
   });
 }
 
-mount();
+// --- states 2 + 3: watching + in-room controls (one compact screen) -----------
+
+function roomView(room: RoomSession): string {
+  const chip = syncChip(room.sync ?? 'synced');
+  const mismatch = room.peerEpisode && room.episode && room.peerEpisode !== room.episode;
+  const peer = room.peerName ?? null;
+  return shell(`
+    <div class="room-head">
+      <span class="room-id" id="roomcode"></span>
+      <span class="chip" data-tone="${chip.tone}"><i class="chip-dot" aria-hidden="true">${chip.dot}</i>${chip.text}</span>
+    </div>
+    <section class="section" aria-label="Now watching">
+      <h2>Watching</h2>
+      <p class="watch-title" id="watchtitle">${room.title ?? 'Open a video to begin'}</p>
+      ${room.episode ? `<p class="watch-sub" id="watchep"></p>` : ''}
+      ${
+        mismatch
+          ? `<p class="warn-row"><span id="mismatch"></span><button id="gothere" class="btn btn-ghost btn-inline" type="button">Go there</button></p>`
+          : ''
+      }
+    </section>
+    <section class="section" aria-label="Room controls">
+      <h2>Control</h2>
+      <div class="seg-group" role="group" aria-label="Who can control playback">
+        <button id="seg-both" class="seg" type="button" aria-pressed="true">Both</button>
+        <button id="seg-me" class="seg" type="button" aria-pressed="false">Just me</button>
+      </div>
+      <div class="ctrl-grid">
+        <span class="ctrl"><button id="c-mic" class="icon-btn" type="button" aria-label="Mute microphone" aria-pressed="false">${iconSvg('mic', 20)}</button><small>Mic</small></span>
+        <span class="ctrl"><button id="c-cam" class="icon-btn" type="button" aria-label="Turn camera off" aria-pressed="false">${iconSvg('video', 20)}</button><small>Camera</small></span>
+        <span class="ctrl"><button id="c-chat" class="icon-btn" type="button" aria-label="Open chat in side panel" aria-pressed="false">${iconSvg('chat', 20)}</button><small>Chat</small></span>
+        <span class="ctrl"><button id="c-resync" class="icon-btn" type="button" aria-label="Resync playback">${iconSvg('sync', 20)}</button><small>Resync</small></span>
+      </div>
+      <button id="leave" class="btn btn-ghost leave" type="button">Leave room</button>
+    </section>
+    ${peer ? `<p class="chip" data-tone="ok"><i class="chip-dot" aria-hidden="true">●</i><span id="peerline"></span></p>` : ''}`);
+}
+
+function wireRoom(room: RoomSession): void {
+  void initTheme(el<HTMLButtonElement>('theme'));
+  el<HTMLElement>('roomcode').textContent = room.roomId;
+  if (room.episode) el<HTMLElement>('watchep').textContent = room.episode;
+  if (room.peerName) {
+    const peerLine = document.getElementById('peerline');
+    if (peerLine) peerLine.textContent = `${room.peerName}'s here.`;
+  }
+  const mismatch = document.getElementById('mismatch');
+  if (mismatch && room.peerEpisode) {
+    mismatch.textContent = `${room.peerName ?? 'They'} is on ${room.peerEpisode}`;
+  }
+
+  const goThere = document.getElementById('gothere') as HTMLButtonElement | null;
+  goThere?.addEventListener('click', () => {
+    // ponytail: same-title navigation lands with M2 peer state; stub confirms.
+    setStatus('Opening what they’re watching…');
+  });
+
+  // ponytail: control mode + mic/cam/chat/resync are local-only stubs until M2
+  // signaling wires them; pressed states stay honest UI feedback.
+  const both = el<HTMLButtonElement>('seg-both');
+  const me = el<HTMLButtonElement>('seg-me');
+  const pick = (justMe: boolean) => {
+    both.setAttribute('aria-pressed', String(!justMe));
+    me.setAttribute('aria-pressed', String(justMe));
+    setStatus(justMe ? 'Only you control playback.' : 'You both control playback.');
+  };
+  both.addEventListener('click', () => pick(false));
+  me.addEventListener('click', () => pick(true));
+
+  const toggle = (id: string, on: string, off: string) => {
+    const b = el<HTMLButtonElement>(id);
+    b.addEventListener('click', () => {
+      const pressed = b.getAttribute('aria-pressed') !== 'true';
+      b.setAttribute('aria-pressed', String(pressed));
+      b.setAttribute('aria-label', pressed ? on : off);
+      if (id === 'c-resync') setStatus('Catching up…');
+    });
+  };
+  toggle('c-mic', 'Unmute microphone', 'Mute microphone');
+  toggle('c-cam', 'Turn camera on', 'Turn camera off');
+  el<HTMLButtonElement>('c-chat').addEventListener('click', async () => {
+    try {
+      // ponytail: side panel entry point differs per manifest; guard + hint.
+      await chrome.sidePanel.open({});
+      window.close();
+    } catch {
+      setStatus('Open the side panel to keep chatting.');
+    }
+  });
+
+  el<HTMLButtonElement>('leave').addEventListener('click', async () => {
+    await send('duet:leave');
+    await boot();
+  });
+
+  if (room.peerName && !room.title) setStatus(`${room.peerName}'s here.`);
+}
+
+// --- state 4: connection lost -------------------------------------------------
+
+function lostView(): string {
+  return shell(`
+    <section class="section lost" aria-label="Connection lost">
+      <p class="lost-title">Reconnecting… your place is saved</p>
+      <button id="retry" class="btn btn-primary" type="button">Try again</button>
+      <p class="hint">Check your connection, then try again. Nothing is lost.</p>
+    </section>`);
+}
+
+function wireLost(): void {
+  void initTheme(el<HTMLButtonElement>('theme'));
+  setStatus('Reconnecting… your place is saved.');
+  el<HTMLButtonElement>('retry').addEventListener('click', async () => {
+    setStatus('Trying again…');
+    // ponytail: no rejoin URL is retained in M1; a stored room means the worker
+    // still owns it, so re-reading state is the honest retry.
+    const room = await readRoom();
+    if (room) {
+      await boot();
+    } else {
+      await boot();
+    }
+  });
+}
+
+// --- boot ---------------------------------------------------------------------
+
+async function boot(force?: 'lost'): Promise<void> {
+  const app = document.getElementById('app');
+  if (!app) return;
+  if (force === 'lost') {
+    app.innerHTML = lostView();
+    wireLost();
+    return;
+  }
+  const room = await readRoom();
+  if (!room) {
+    const service = detectService(await activeTabUrl());
+    app.innerHTML = homeView(service);
+    wireHome(service);
+    return;
+  }
+  if (room.status === 'reconnecting') {
+    app.innerHTML = lostView();
+    wireLost();
+    return;
+  }
+  app.innerHTML = roomView(room);
+  wireRoom(room);
+}
+
+void boot();

@@ -29,4 +29,7 @@ declare namespace chrome {
   namespace permissions {
     function request(perms: { origins?: string[] }): Promise<boolean>;
   }
+  namespace action {
+    function setIcon(details: { path: Record<number, string> }): Promise<void>;
+  }
 }
