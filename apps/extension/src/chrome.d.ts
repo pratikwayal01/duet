@@ -13,6 +13,7 @@ declare namespace chrome {
     };
     function sendMessage(msg: unknown): Promise<unknown>;
     function getManifest(): { version: string };
+    function openOptionsPage(): Promise<void>;
   }
   namespace storage {
     interface StorageArea {

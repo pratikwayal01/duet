@@ -6,6 +6,7 @@
 import { initTheme } from './theme.ts';
 import { iconSvg } from './icons/icons.ts';
 import {
+  getApiKey,
   getBase,
   inviteUrl,
   makeSecret,
@@ -93,6 +94,14 @@ async function activeTabUrl(): Promise<string | null> {
   }
 }
 
+function wireShell(): void {
+  document.getElementById('settings')?.addEventListener('click', () => {
+    void chrome.runtime.openOptionsPage().catch(() => {
+      setStatus('Open settings from the extension menu.');
+    });
+  });
+}
+
 function setStatus(msg: string): void {
   el<HTMLElement>('statusline').textContent = msg;
 }
@@ -105,7 +114,10 @@ function shell(inner: string): string {
           <span class="mark" aria-hidden="true"></span>
           <span class="wordmark">Duet</span>
         </div>
-        <button id="theme" class="icon-btn icon-sm" type="button" aria-pressed="false" aria-label="Toggle light theme">${iconSvg('moon', 18)}</button>
+        <span class="brand-actions">
+          <button id="settings" class="icon-btn icon-sm" type="button" aria-label="Open settings">${iconSvg('settings', 18)}</button>
+          <button id="theme" class="icon-btn icon-sm" type="button" aria-pressed="false" aria-label="Toggle light theme">${iconSvg('moon', 18)}</button>
+        </span>
       </div>
       ${inner}
       <p id="statusline" class="status" role="status"></p>
@@ -141,12 +153,13 @@ function homeView(service: string | null): string {
 function wireHome(service: string | null): void {
   void service;
   void initTheme(el<HTMLButtonElement>('theme'));
+  wireShell();
 
   el<HTMLButtonElement>('start').addEventListener('click', async () => {
     setStatus('Starting your room…');
     try {
       const base = await getBase();
-      const roomId = await mintRoom(base);
+      const roomId = await mintRoom(base, await getApiKey());
       const secret = makeSecret();
       const res = await send('duet:join', { url: signalUrl(base, roomId), roomId });
       if (res?.ok) {
@@ -225,6 +238,7 @@ function roomView(room: RoomSession): string {
 
 function wireRoom(room: RoomSession): void {
   void initTheme(el<HTMLButtonElement>('theme'));
+  wireShell();
   el<HTMLElement>('roomcode').textContent = room.roomId;
   if (room.episode) el<HTMLElement>('watchep').textContent = room.episode;
   if (room.peerName) {
@@ -296,6 +310,7 @@ function lostView(): string {
 
 function wireLost(): void {
   void initTheme(el<HTMLButtonElement>('theme'));
+  wireShell();
   setStatus('Reconnecting… your place is saved.');
   el<HTMLButtonElement>('retry').addEventListener('click', async () => {
     setStatus('Trying again…');

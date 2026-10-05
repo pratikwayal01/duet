@@ -3,8 +3,9 @@
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const BASE_KEY = 'duet:base';
+const API_KEY_STORAGE = 'duet:api-key';
 
-/** Live default so a fresh install can start a room with no prior link. */
+/** Shipped default; replaceable in Settings (options page). */
 export const DEFAULT_BASE = 'https://duet-jhwt.onrender.com';
 
 function rndB32(bytes: number): string {
@@ -56,12 +57,34 @@ export function signalUrl(base: string, roomId: string): string {
 }
 
 /** Mint a server-side room id (128-bit base32; local ids are rejected). */
-export async function mintRoom(base: string): Promise<string> {
-  const res = await fetch(`${base.replace(/\/$/, '')}/api/room`);
+export async function mintRoom(base: string, apiKey?: string): Promise<string> {
+  const headers: Record<string, string> = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const res = await fetch(`${base.replace(/\/$/, '')}/api/room`, { headers });
   if (!res.ok) throw new Error(`room mint failed: ${res.status}`);
   const body = (await res.json()) as { id?: string };
   if (!body.id) throw new Error('room mint failed: bad response');
   return body.id;
+}
+
+/** Optional API key for self-hosted signal servers (sent as Bearer on
+ *  /api/room and later /api/ice). Empty = open server. Stored locally only. */
+export async function getApiKey(): Promise<string> {
+  try {
+    const v = (await chrome.storage.local.get(API_KEY_STORAGE))[API_KEY_STORAGE];
+    return typeof v === 'string' ? v : '';
+  } catch {
+    return '';
+  }
+}
+
+export async function setApiKey(key: string): Promise<void> {
+  try {
+    if (key) await chrome.storage.local.set({ [API_KEY_STORAGE]: key });
+    else await chrome.storage.local.remove(API_KEY_STORAGE);
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export interface ParsedInvite {
