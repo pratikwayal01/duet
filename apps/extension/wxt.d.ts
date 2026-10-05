@@ -3,3 +3,7 @@
 declare module 'wxt' {
   export function defineConfig<T extends Record<string, unknown>>(config: T): T;
 }
+
+// WXT auto-imports these inside entrypoints at build time.
+declare function defineBackground(main: () => void): unknown;
+declare function defineContentScript(opts: { matches: string[]; main: () => void }): unknown;
