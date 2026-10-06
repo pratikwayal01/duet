@@ -61,16 +61,32 @@ function mount(): void {
   const app = document.getElementById('app');
   if (!app) return;
   app.innerHTML = `
+  <div class="opt-layout">
+    <aside class="opt-side" aria-label="Settings sections">
+      <div class="brand" aria-label="Duet">
+        <span class="mark" aria-hidden="true"></span>
+        <span><span class="wordmark">Duet</span><br /><span class="hint" id="side-ver">settings</span></span>
+      </div>
+      <nav class="opt-nav" aria-label="Settings">
+        <a href="#profile">Profile</a>
+        <a href="#connection">Connection</a>
+        <a href="#playback">Playback</a>
+        <a href="#diagnostics">Diagnostics</a>
+        <a href="#about">About</a>
+        <a href="#danger" class="danger-link">Danger zone</a>
+      </nav>
+    </aside>
+    <div class="opt-main">
     <h1 id="title">Settings</h1>
 
-    <section class="section" aria-labelledby="h-profile">
+    <section class="section" id="profile" aria-labelledby="h-profile">
       <h2 id="h-profile">Profile</h2>
       <label class="field-label" for="name">Display name</label>
       <input id="name" class="field" type="text" maxlength="64" autocomplete="off" spellcheck="false" />
       <p class="hint">Shown to the other person. Defaults to Guest.</p>
     </section>
 
-    <section class="section" aria-labelledby="h-conn">
+    <section class="section" aria-labelledby="h-conn" id="connection">
       <h2 id="h-conn">Connection</h2>
       <label class="field-label" for="base">Signal server</label>
       <input id="base" class="field" type="url" autocomplete="off" spellcheck="false"
@@ -84,7 +100,7 @@ function mount(): void {
       </div>
     </section>
 
-    <section class="section" aria-labelledby="h-play">
+    <section class="section" aria-labelledby="h-play" id="playback">
       <h2 id="h-play">Playback</h2>
       <p class="field-label" id="control-label">Who controls by default</p>
       <div class="seg-group" role="group" aria-labelledby="control-label">
@@ -106,7 +122,7 @@ function mount(): void {
       </div>
     </section>
 
-    <section class="section" aria-labelledby="h-diag">
+    <section class="section" aria-labelledby="h-diag" id="diagnostics">
       <h2 id="h-diag">Diagnostics</h2>
       <p class="hint">Clock sync between you and the server. Big offsets mean choppy sync.</p>
       <div class="btn-row">
@@ -121,7 +137,7 @@ function mount(): void {
       </dl>
     </section>
 
-    <section class="section danger" aria-labelledby="h-danger">
+    <section class="section danger" aria-labelledby="h-danger" id="danger">
       <h2 id="h-danger">Danger zone</h2>
       <div class="btn-row">
         <button id="leave" class="btn btn-ghost" type="button">Leave all rooms</button>
@@ -130,7 +146,7 @@ function mount(): void {
       <p id="status" class="status" role="status"></p>
     </section>
 
-    <section class="section" aria-labelledby="h-about">
+    <section class="section" aria-labelledby="h-about" id="about">
       <h2 id="h-about">About Duet</h2>
       <p class="hint" id="about-ver">Duet — browser extension</p>
       <ul class="link-list">
@@ -148,7 +164,9 @@ function mount(): void {
         <div><dt>management</dt><dd>Self-uninstall from Settings only</dd></div>
         <div><dt>site access</dt><dd>Sync on streaming sites + your signal server (changeable in Connection)</dd></div>
       </dl>
-    </section>`;
+    </section>
+    </div>
+  </div>`;
 }
 
 async function boot(): Promise<void> {
@@ -314,8 +332,10 @@ async function boot(): Promise<void> {
 
   // --- about ---
   try {
+    const ver = chrome.runtime.getManifest().version;
     ($('about-ver') as HTMLElement).textContent =
-      `Duet v${chrome.runtime.getManifest().version} — watch together, just the two of you.`;
+      `Duet v${ver} — watch together, just the two of you.`;
+    ($('side-ver') as HTMLElement).textContent = `v${ver}`;
   } catch {
     /* fallback text stands */
   }

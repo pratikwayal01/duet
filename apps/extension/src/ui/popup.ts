@@ -99,9 +99,19 @@ async function activeTabUrl(): Promise<string | null> {
 
 function wireShell(): void {
   document.getElementById('settings')?.addEventListener('click', () => {
-    void chrome.runtime.openOptionsPage().catch(() => {
-      setStatus('Open settings from the extension menu.');
-    });
+    // Own full-page tab (like a settings app), never the browser's
+    // extensions page. Falls back to openOptionsPage if tabs fail.
+    try {
+      void chrome.tabs
+        .create({ url: chrome.runtime.getURL('options.html') })
+        .catch(() => chrome.runtime.openOptionsPage())
+        .then(() => window.close())
+        .catch(() => {});
+    } catch {
+      void chrome.runtime.openOptionsPage().catch(() => {
+        setStatus('Open settings from the extension menu.');
+      });
+    }
   });
 }
 
