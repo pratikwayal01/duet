@@ -101,6 +101,12 @@ async function activeTabUrl(): Promise<string | null> {
 }
 
 function wireShell(): void {
+  try {
+    const stamp = document.getElementById('buildstamp');
+    if (stamp) stamp.textContent = `Duet v${chrome.runtime.getManifest().version}`;
+  } catch {
+    /* ignore */
+  }
   document.getElementById('settings')?.addEventListener('click', () => {
     // Own full-page tab (like a settings app), never the browser's
     // extensions page. Falls back to openOptionsPage if tabs fail.
@@ -137,6 +143,7 @@ function shell(inner: string): string {
       </div>
       ${inner}
       <p id="statusline" class="status" role="status"></p>
+      <p class="hint build-stamp" id="buildstamp"></p>
     </div>`;
 }
 
