@@ -13,7 +13,7 @@ jobs:
           fetch-depth: 0 # gitleaks needs full history; shallow clones fail the scan
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22 # extension tests use --experimental-strip-types (22+)
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
