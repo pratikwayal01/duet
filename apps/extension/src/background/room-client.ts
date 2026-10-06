@@ -23,6 +23,7 @@ export class RoomClient {
   private clock: ClockEstimate = { serverOffsetMs: 0, rttMs: 0 };
   private backoffMs = 1000;
   private closed = false;
+  private epoch = 0; // bumped on every connect/close; stale flows abort
 
   constructor(
     private events: {
@@ -45,10 +46,17 @@ export class RoomClient {
   }
 
   async connect(url: string, roomId: string): Promise<void> {
+    const my = ++this.epoch;
+    const live = (): boolean => my === this.epoch && !this.closed;
     this.closed = false;
-    this.ws = new WebSocket(url);
+    try {
+      this.ws?.close();
+    } catch {
+      /* already gone */
+    }
+    const ws = new WebSocket(url);
+    this.ws = ws;
     await new Promise<void>((resolve, reject) => {
-      const ws = this.ws!;
       // Sleeping free-tier servers never answer: bound the wait so callers
       // get a failure (and a retryHint) instead of hanging forever.
       const timer = setTimeout(() => {
@@ -61,6 +69,15 @@ export class RoomClient {
       }, 20000);
       ws.onopen = () => {
         clearTimeout(timer);
+        if (!live() || this.ws !== ws) {
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          reject(new Error('superseded by a newer connect'));
+          return;
+        }
         resolve();
       };
       ws.onerror = () => {
@@ -68,31 +85,38 @@ export class RoomClient {
         reject(new Error('signaling connect failed'));
       };
     });
-    this.ws.onmessage = (ev) => this.handle(ev.data as string);
-    this.ws.onclose = () => void this.reconnect(url, roomId);
-    await this.syncClock();
+    ws.onmessage = (ev) => this.handle(ev.data as string);
+    ws.onclose = () => void this.reconnect(url, roomId, my);
+    await this.syncClock(ws, live);
+    if (!live() || this.ws !== ws) throw new Error('superseded by a newer connect');
     await chrome.storage.session.set({ [SESSION_KEY]: { roomId, rev: 0 } satisfies Partial<RoomSnapshot> });
     this.events.onStatus('connected');
   }
 
   send(msg: unknown): void {
-    this.ws?.send(JSON.stringify(msg));
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
   async close(): Promise<void> {
+    this.epoch++; // invalidate any in-flight connect/reconnect
     this.closed = true;
-    this.ws?.close();
+    try {
+      this.ws?.close();
+    } catch {
+      /* already gone */
+    }
     this.ws = null;
     await chrome.storage.session.remove(SESSION_KEY);
     this.events.onStatus('closed');
   }
 
   /** NTP-style ping: keep lowest-RTT sample of 5 (PRD §7.2). */
-  private async syncClock(): Promise<void> {
+  private async syncClock(ws: WebSocket, live: () => boolean): Promise<void> {
     let best: ClockEstimate = { serverOffsetMs: 0, rttMs: Infinity };
     for (let i = 0; i < 5; i++) {
+      if (!live()) throw new Error('superseded by a newer connect');
       const t0 = Date.now();
-      const serverTime = await this.ping();
+      const serverTime = await this.ping(ws);
       const rtt = Date.now() - t0;
       const candidate = { serverOffsetMs: serverTime - (t0 + rtt / 2), rttMs: rtt };
       if (rtt < best.rttMs) best = candidate;
@@ -100,22 +124,22 @@ export class RoomClient {
     this.clock = best;
   }
 
-  private ping(): Promise<number> {
+  private ping(ws: WebSocket): Promise<number> {
     return new Promise((resolve) => {
       const t = Date.now();
       const onMsg = (ev: MessageEvent) => {
         try {
           const m = JSON.parse(ev.data as string) as { t?: string; serverTime?: number };
           if (m.t === 'pong') {
-            this.ws?.removeEventListener('message', onMsg);
+            ws.removeEventListener('message', onMsg);
             resolve(m.serverTime ?? t);
           }
         } catch {
           /* ignore non-protocol frames */
         }
       };
-      this.ws?.addEventListener('message', onMsg);
-      this.ws?.send(JSON.stringify({ v: 1, t: 'ping', id: `c${t}` }));
+      ws.addEventListener('message', onMsg);
+      ws.send(JSON.stringify({ v: 1, t: 'ping', id: `c${t}` }));
       // ponytail: no timeout — close/reconnect bounds it.
     });
   }
@@ -130,8 +154,8 @@ export class RoomClient {
     this.events.onState(msg);
   }
 
-  private async reconnect(url: string, roomId: string): Promise<void> {
-    if (this.closed) return;
+  private async reconnect(url: string, roomId: string, epoch: number): Promise<void> {
+    if (this.closed || epoch !== this.epoch) return;
     this.events.onStatus('reconnecting');
     // Exponential backoff with jitter; re-syncs clock on success.
     await new Promise((r) => setTimeout(r, this.backoffMs + Math.random() * 500));
@@ -140,7 +164,7 @@ export class RoomClient {
       await this.connect(url, roomId);
       this.backoffMs = 1000;
     } catch {
-      await this.reconnect(url, roomId);
+      await this.reconnect(url, roomId, epoch);
     }
   }
 }
