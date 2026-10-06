@@ -159,6 +159,7 @@ function syncChip(sync: NonNullable<RoomSession['sync']>): { text: string; tone:
 function homeView(service: string | null, href: string | null): string {
   return shell(`
     ${serviceChip(service, href)}
+    <p id="serverline" class="hint" role="status">Checking server…</p>
     <button id="start" class="btn btn-primary" type="button">Start a room</button>
     <form id="join" class="join field">
       <input id="link" type="text" placeholder="Paste invite link…" aria-label="Invite link"
@@ -171,6 +172,23 @@ function wireHome(service: string | null): void {
   void service;
   void initTheme(el<HTMLButtonElement>('theme'));
   wireShell();
+
+  // Backend reachability confirmation (non-blocking, 8 s bound).
+  void (async () => {
+    const line = document.getElementById('serverline');
+    if (!line) return;
+    try {
+      const base = await getBase();
+      const short = base.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+      const res = await fetch(`${base.replace(/\/$/, '')}/api/health`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      const body = (await res.json()) as { ok?: boolean };
+      line.textContent = res.ok && body.ok ? `Server ready · ${short}` : `Server answered oddly · ${short}`;
+    } catch {
+      line.textContent = 'Server asleep — first Start wakes it, then try again.';
+    }
+  })();
 
   el<HTMLButtonElement>('start').addEventListener('click', async () => {
     setStatus('Starting your room…');

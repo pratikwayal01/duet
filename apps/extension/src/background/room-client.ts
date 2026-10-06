@@ -49,8 +49,24 @@ export class RoomClient {
     this.ws = new WebSocket(url);
     await new Promise<void>((resolve, reject) => {
       const ws = this.ws!;
-      ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error('signaling connect failed'));
+      // Sleeping free-tier servers never answer: bound the wait so callers
+      // get a failure (and a retryHint) instead of hanging forever.
+      const timer = setTimeout(() => {
+        try {
+          ws.close();
+        } catch {
+          /* already gone */
+        }
+        reject(new Error('signaling connect timed out'));
+      }, 20000);
+      ws.onopen = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      ws.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error('signaling connect failed'));
+      };
     });
     this.ws.onmessage = (ev) => this.handle(ev.data as string);
     this.ws.onclose = () => void this.reconnect(url, roomId);
