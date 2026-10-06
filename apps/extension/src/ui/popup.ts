@@ -68,9 +68,9 @@ function el<T extends HTMLElement>(id: string): T {
   return n as T;
 }
 
-async function send(cmd: string, extra: Record<string, string> = {}): Promise<{ ok?: boolean } | null> {
+async function send(cmd: string, extra: Record<string, string> = {}): Promise<{ ok?: boolean; error?: string } | null> {
   try {
-    return (await chrome.runtime.sendMessage({ cmd, ...extra })) as { ok?: boolean } | null;
+    return (await chrome.runtime.sendMessage({ cmd, ...extra })) as { ok?: boolean; error?: string } | null;
   } catch {
     return null;
   }
@@ -207,7 +207,7 @@ function wireHome(service: string | null): void {
         }
         await boot();
       } else {
-        await boot('lost');
+        await boot('lost', res?.error ? `Couldn't join: ${res.error}` : undefined);
       }
     } catch (e) {
       await boot('lost', (e as Error)?.message === 'waking'
@@ -230,7 +230,7 @@ function wireHome(service: string | null): void {
     if (res?.ok) {
       await boot();
     } else {
-      await boot('lost');
+      await boot('lost', res?.error ? `Couldn't join: ${res.error}` : undefined);
     }
   });
 }
@@ -354,7 +354,7 @@ function wireLost(): void {
     const room = await readRoom();
     if (room?.url) {
       const res = await send('duet:join', { url: room.url, roomId: room.roomId });
-      await boot(res?.ok ? undefined : 'lost');
+      await boot(res?.ok ? undefined : 'lost', res?.error ? `Couldn't join: ${res.error}` : undefined);
     } else {
       await boot();
     }

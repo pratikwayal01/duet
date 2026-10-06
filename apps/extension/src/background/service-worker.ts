@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         setToolbarState('waiting');
         reply({ ok: true });
       })
-      .catch(() => reply({ ok: false }));
+      .catch((e) => reply({ ok: false, error: e instanceof Error ? e.message : 'join failed' }));
     return true;
   }
   if (m.cmd === 'duet:leave') {
