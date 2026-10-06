@@ -124,13 +124,14 @@ function shell(inner: string): string {
     </div>`;
 }
 
-function serviceChip(service: string | null, unknownTab: boolean): string {
-  if (unknownTab) {
+function serviceChip(service: string | null, href: string | null): string {
+  if (href && !/^https?:\/\//i.test(href)) {
     return `<p class="chip" data-tone="muted"><i class="chip-dot" aria-hidden="true">○</i>Open a video site to begin</p>`;
   }
-  return service
-    ? `<p class="chip" data-tone="ok"><i class="chip-dot" aria-hidden="true">●</i>${service} · supported</p>`
-    : `<p class="chip" data-tone="muted"><i class="chip-dot" aria-hidden="true">○</i>This site isn't supported yet</p>`;
+  if (service) {
+    return `<p class="chip" data-tone="ok"><i class="chip-dot" aria-hidden="true">●</i>${service} · supported</p>`;
+  }
+  return `<p class="chip" data-tone="warn"><i class="chip-dot" aria-hidden="true">◐</i>Generic sync — most video players work</p>`;
 }
 
 function syncChip(sync: NonNullable<RoomSession['sync']>): { text: string; tone: SyncTone; dot: string } {
@@ -142,9 +143,9 @@ function syncChip(sync: NonNullable<RoomSession['sync']>): { text: string; tone:
 
 // --- state 1: home -----------------------------------------------------------
 
-function homeView(service: string | null, unknownTab: boolean): string {
+function homeView(service: string | null, href: string | null): string {
   return shell(`
-    ${serviceChip(service, unknownTab)}
+    ${serviceChip(service, href)}
     <button id="start" class="btn btn-primary" type="button">Start a room</button>
     <form id="join" class="join field">
       <input id="link" type="text" placeholder="Paste invite link…" aria-label="Invite link"
@@ -343,7 +344,7 @@ async function boot(force?: 'lost', hint?: string): Promise<void> {
   if (!room) {
     const tabUrl = await activeTabUrl();
     const service = detectService(tabUrl);
-    app.innerHTML = homeView(service, tabUrl === null);
+    app.innerHTML = homeView(service, tabUrl);
     wireHome(service);
     return;
   }

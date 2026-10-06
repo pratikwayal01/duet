@@ -14,16 +14,10 @@ const ADAPTERS = [
 ];
 
 export default defineContentScript({
-  // Mirrors host_permissions in wxt.config.ts (Chromium only, PRD D2).
-  matches: [
-    '*://*.netflix.com/*',
-    '*://*.amazon.com/*',
-    '*://*.amazon.in/*',
-    '*://*.primevideo.com/*',
-    '*://*.hotstar.com/*',
-    '*://*.jiohotstar.com/*',
-    '*://*.youtube.com/*',
-  ],
+  // Every http(s) site: known services get their adapter, everything else
+  // falls back to the generic <video> adapter. Attach stays lazy (only after
+  // a room is active), so idle cost on unrelated pages is ~zero.
+  matches: ['*://*/*'],
   main() {
     let roomActive = false;
 
