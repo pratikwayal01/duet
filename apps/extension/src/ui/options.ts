@@ -256,11 +256,7 @@ async function boot(): Promise<void> {
   $('leave').addEventListener('click', async () => {
     try {
       await chrome.runtime.sendMessage({ cmd: 'duet:leave' });
-    } catch {
-      /* worker may be asleep; session wipe below still applies */
-    }
-    try {
-      await chrome.storage.session.clear();
+      await chrome.storage.session.remove('duet:room');
     } catch {
       /* ignore */
     }
