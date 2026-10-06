@@ -128,6 +128,26 @@ function mount(): void {
         <button id="uninstall" class="btn btn-ghost leave" type="button">Uninstall Duet…</button>
       </div>
       <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section class="section" aria-labelledby="h-about">
+      <h2 id="h-about">About Duet</h2>
+      <p class="hint" id="about-ver">Duet — browser extension</p>
+      <ul class="link-list">
+        <li><a id="about-change" href="https://github.com/pratikwayal01/duet/releases" target="_blank" rel="noreferrer">Changelog</a></li>
+        <li><a href="https://github.com/pratikwayal01/duet/tree/main/docs" target="_blank" rel="noreferrer">Documentation</a></li>
+        <li><a href="https://github.com/pratikwayal01/duet" target="_blank" rel="noreferrer">GitHub</a></li>
+        <li><a href="https://github.com/pratikwayal01/duet/issues/new/choose" target="_blank" rel="noreferrer">Send feedback</a></li>
+        <li><a href="https://github.com/pratikwayal01/duet/blob/main/docs/privacy.md" target="_blank" rel="noreferrer">Privacy policy</a></li>
+      </ul>
+      <h3 class="sub">Permissions used</h3>
+      <dl class="kv">
+        <div><dt>storage</dt><dd>Settings and room state, on this device only</dd></div>
+        <div><dt>sidePanel</dt><dd>Chat and sync controls beside the video</dd></div>
+        <div><dt>activeTab</dt><dd>Detect the video on the tab you invoke us from</dd></div>
+        <div><dt>management</dt><dd>Self-uninstall from Settings only</dd></div>
+        <div><dt>site access</dt><dd>Sync on streaming sites + your signal server (changeable in Connection)</dd></div>
+      </dl>
     </section>`;
 }
 
@@ -270,11 +290,20 @@ async function boot(): Promise<void> {
     if (!armed) {
       armed = true;
       uninstall.textContent = 'Click again to confirm uninstall';
-      setStatus('This removes Duet and its local settings.');
+      setStatus('Tell us why first — a feedback form opens, then confirm here.');
+      try {
+        void chrome.tabs
+          .create({
+            url: 'https://github.com/pratikwayal01/duet/issues/new?template=uninstall.yml',
+          })
+          .catch(() => {});
+      } catch {
+        /* no tabs permission: feedback link lives in About below */
+      }
       armTimer = window.setTimeout(() => {
         armed = false;
         uninstall.textContent = 'Uninstall Duet…';
-      }, 5000);
+      }, 30000);
       return;
     }
     window.clearTimeout(armTimer);
@@ -282,6 +311,14 @@ async function boot(): Promise<void> {
       setStatus("Couldn't uninstall — remove it from the extensions page.");
     });
   });
+
+  // --- about ---
+  try {
+    ($('about-ver') as HTMLElement).textContent =
+      `Duet v${chrome.runtime.getManifest().version} — watch together, just the two of you.`;
+  } catch {
+    /* fallback text stands */
+  }
 }
 
 void boot();

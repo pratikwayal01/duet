@@ -1,0 +1,32 @@
+name: Uninstall feedback
+description: Tell us why Duet didn't work out (opened automatically on uninstall)
+title: "[uninstall-feedback]: "
+labels: ["uninstall-feedback"]
+body:
+  - type: dropdown
+    id: reason
+    attributes:
+      label: Why are you uninstalling?
+      options:
+        - Couldn't get a room working
+        - Sync didn't stay in sync
+        - Missing feature I need
+        - Just cleaning up / trying later
+        - Privacy or permissions concern
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: What happened?
+      description: Anything specific — site, error text, what you expected.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      description: From Settings → About.
+    validations:
+      required: false

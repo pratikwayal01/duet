@@ -33,6 +33,9 @@ declare namespace chrome {
   namespace action {
     function setIcon(details: { path: Record<number, string> }): Promise<void>;
   }
+  namespace tabs {
+    function create(options: { url: string }): Promise<unknown>;
+  }
   namespace management {
     function uninstallSelf(options?: { showConfirmDialog?: boolean }): Promise<void>;
   }
