@@ -128,6 +128,16 @@ function setStatus(msg: string): void {
   el<HTMLElement>('statusline').textContent = msg;
 }
 
+// One section's wiring must never kill the rest: report visibly, continue.
+function section(name: string, fn: () => void): void {
+  try {
+    fn();
+  } catch (e) {
+    setStatus(`Something broke in ${name}.`);
+    console.error(`[duet] ${name} wiring failed`, e);
+  }
+}
+
 function shell(inner: string): string {
   return `
     <div class="wrap popup-wrap">
@@ -273,7 +283,11 @@ function wireHome(service: string | null): void {
 // --- states 2 + 3: watching + in-room controls (one compact screen) -----------
 
 function roomView(room: RoomSession): string {
-  const chip = syncChip(room.sync ?? 'synced');
+  // Honest chip: "Synced" only when a peer is actually here. There is no
+  // peer-presence protocol yet (M2), so a fresh room always waits.
+  const chip = room.peerName
+    ? syncChip(room.sync ?? 'synced')
+    : { text: 'Waiting for your person…', tone: 'warn', dot: '⏸' } as const;
   const mismatch = room.peerEpisode && room.episode && room.peerEpisode !== room.episode;
   const peer = room.peerName ?? null;
   return shell(`
@@ -325,7 +339,8 @@ function wireRoom(room: RoomSession): void {
   void initTheme(el<HTMLButtonElement>('theme'));
   wireShell();
   el<HTMLElement>('roomcode').textContent = room.code ?? room.roomId;
-  if (room.base && room.secret) {
+  section('invite', () => {
+    if (!room.base || !room.secret) return;
     const link = inviteUrl(room.base, room.roomId, room.secret);
     const row = document.getElementById('inviterow');
     const span = document.getElementById('invitelink');
@@ -342,37 +357,51 @@ function wireRoom(room: RoomSession): void {
         }
       });
     }
-  }
-  if (room.episode) el<HTMLElement>('watchep').textContent = room.episode;
-  if (room.peerName) {
-    const peerLine = document.getElementById('peerline');
-    if (peerLine) peerLine.textContent = `${room.peerName}'s here.`;
-  }
-  const mismatch = document.getElementById('mismatch');
-  if (mismatch && room.peerEpisode) {
-    mismatch.textContent = `${room.peerName ?? 'They'} is on ${room.peerEpisode}`;
-  }
-
-  const goThere = document.getElementById('gothere') as HTMLButtonElement | null;
-  goThere?.addEventListener('click', () => {
-    // ponytail: same-title navigation lands with M2 peer state; stub confirms.
-    setStatus('Opening what they’re watching…');
   });
+  section('watching', () => {
+    if (room.episode) el<HTMLElement>('watchep').textContent = room.episode;
+    if (room.peerName) {
+      const peerLine = document.getElementById('peerline');
+      if (peerLine) peerLine.textContent = `${room.peerName}'s here.`;
+    }
+    const mismatch = document.getElementById('mismatch');
+    if (mismatch && room.peerEpisode) {
+      mismatch.textContent = `${room.peerName ?? 'They'} is on ${room.peerEpisode}`;
+    }
+
+    const goThere = document.getElementById('gothere') as HTMLButtonElement | null;
+    goThere?.addEventListener('click', () => {
+      // ponytail: same-title navigation lands with M2 peer state; stub confirms.
+      setStatus('Opening what they’re watching…');
+    });
+  });
+
+  section('controls', () => {
 
   // ponytail: control mode + mic/cam/chat/resync are local-only stubs until M2
   // signaling wires them; pressed states stay honest UI feedback.
+  // Voice/video calls arrive in M4 — no fake toggles. Honest toast instead.
+  const soon = 'Voice and video calls arrive in M4 — use any call app alongside for now.';
   const both = el<HTMLButtonElement>('seg-both');
   const me = el<HTMLButtonElement>('seg-me');
   const pick = (justMe: boolean) => {
     both.setAttribute('aria-pressed', String(!justMe));
     me.setAttribute('aria-pressed', String(justMe));
     setStatus(justMe ? 'Only you control playback.' : 'You both control playback.');
+    void chrome.storage.local.set({ 'duet:control-default': justMe ? 'host' : 'both' }).catch(() => {});
   };
   both.addEventListener('click', () => pick(false));
   me.addEventListener('click', () => pick(true));
-
-  // Voice/video calls arrive in M4 — no fake toggles. Honest toast instead.
-  const soon = 'Voice and video calls arrive in M4 — use any call app alongside for now.';
+  chrome.storage.local
+    .get('duet:control-default')
+    .then((v) => {
+      if ((v as Record<string, unknown>)['duet:control-default'] === 'host') pick(true);
+    })
+    .catch(() => {
+      /* default stands */
+    });
+  el<HTMLButtonElement>('c-mic').addEventListener('click', () => setStatus(soon));
+  el<HTMLButtonElement>('c-cam').addEventListener('click', () => setStatus(soon));
   el<HTMLButtonElement>('c-resync').addEventListener('click', async () => {
     setStatus('Catching up…');
     try {
@@ -398,14 +427,18 @@ function wireRoom(room: RoomSession): void {
       setStatus('Side panel unavailable — pin it from the browser toolbar, then retry.');
     }
   });
+  }); // section('controls')
 
-  el<HTMLButtonElement>('leave').addEventListener('click', async () => {
-    await send('duet:leave');
-    await boot();
+  section('leave', () => {
+    el<HTMLButtonElement>('leave').addEventListener('click', async () => {
+      await send('duet:leave');
+      await boot();
+    });
   });
 
   // Mini chat lives here so nobody has to hunt for the side panel.
   // History is per-popup-open (side panel keeps its own); transport is the room socket.
+  section('chat', () => {
   const esc = (s: string): string =>
     s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
   const addChat = (mine: boolean, text: string): void => {
@@ -432,6 +465,7 @@ function wireRoom(room: RoomSession): void {
     const m = msg as { cmd?: string; chat?: { from?: string; text?: string } };
     if (m.cmd === 'duet:state' && typeof m.chat?.text === 'string') addChat(false, m.chat.text);
   });
+  }); // section('chat')
 
   if (room.peerName && !room.title) setStatus(`${room.peerName}'s here.`);
 }

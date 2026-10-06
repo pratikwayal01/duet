@@ -11,6 +11,11 @@
 
 .duet-popup { width: 360px; box-sizing: border-box; }
 
+/* Popup scroll contract: fixed header region, scrollable body, 560px cap. */
+body.duet-popup { display: flex; flex-direction: column; max-height: 560px; }
+body.duet-popup #app { display: flex; flex-direction: column; min-height: 0; }
+body.duet-popup .popup-wrap { overflow-y: auto; min-height: 0; flex: 1; }
+
 .popup-wrap { max-height: 520px; min-height: 300px; overflow: hidden; }
 .icon-btn svg { display: block; }
 .icon-sm { min-width: 36px; min-height: 36px; }
