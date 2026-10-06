@@ -59,5 +59,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       });
     return true;
   }
+  if (m.cmd === 'duet:diag') {
+    const d = client ? getClient().diag() : { connected: false, serverOffsetMs: 0, rttMs: null };
+    chrome.storage.session
+      .get('duet:room')
+      .then((v) => reply({ ok: true, diag: d, room: (v as Record<string, unknown>)['duet:room'] ?? null }))
+      .catch(() => reply({ ok: true, diag: d, room: null }));
+    return true;
+  }
   return false;
 });

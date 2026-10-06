@@ -5,7 +5,7 @@ export default defineConfig({
   srcDir: 'src',
   manifest: {
     name: 'Duet — watch together',
-    permissions: ['activeTab', 'storage', 'sidePanel'],
+    permissions: ['activeTab', 'storage', 'sidePanel', 'management'],
     icons: {
       16: 'icons/icon-16.png',
       32: 'icons/icon-32.png',

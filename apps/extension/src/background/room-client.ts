@@ -35,6 +35,15 @@ export class RoomClient {
     return Date.now() + this.clock.serverOffsetMs;
   }
 
+  /** Diagnostics snapshot for the settings page (offset/RTT/connection). */
+  diag(): { connected: boolean; serverOffsetMs: number; rttMs: number | null } {
+    return {
+      connected: this.ws !== null,
+      serverOffsetMs: Math.round(this.clock.serverOffsetMs),
+      rttMs: this.clock.rttMs === Infinity ? null : Math.round(this.clock.rttMs),
+    };
+  }
+
   async connect(url: string, roomId: string): Promise<void> {
     this.closed = false;
     this.ws = new WebSocket(url);
