@@ -84,6 +84,10 @@ export class RoomClient {
         clearTimeout(timer);
         reject(new Error('signaling connect failed'));
       };
+      ws.onclose = () => {
+        clearTimeout(timer);
+        reject(new Error('signaling socket closed during connect'));
+      };
     });
     ws.onmessage = (ev) => this.handle(ev.data as string);
     ws.onclose = () => void this.reconnect(url, roomId, my);
@@ -125,13 +129,21 @@ export class RoomClient {
   }
 
   private ping(ws: WebSocket): Promise<number> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const t = Date.now();
+      const cleanup = (): void => {
+        ws.removeEventListener('message', onMsg);
+        ws.removeEventListener('close', onClose);
+      };
+      const onClose = (): void => {
+        cleanup();
+        reject(new Error('signaling socket closed during clock sync'));
+      };
       const onMsg = (ev: MessageEvent) => {
         try {
           const m = JSON.parse(ev.data as string) as { t?: string; serverTime?: number };
           if (m.t === 'pong') {
-            ws.removeEventListener('message', onMsg);
+            cleanup();
             resolve(m.serverTime ?? t);
           }
         } catch {
@@ -139,7 +151,10 @@ export class RoomClient {
         }
       };
       ws.addEventListener('message', onMsg);
-      ws.send(JSON.stringify({ v: 1, t: 'ping', id: `c${t}` }));
+      ws.addEventListener('close', onClose);
+      // clientTime is required by the protocol — without it the server
+      // closes the socket (1007) and connect() would hang forever.
+      ws.send(JSON.stringify({ v: 1, t: 'ping', id: `c${t}`, clientTime: t }));
       // ponytail: no timeout — close/reconnect bounds it.
     });
   }
