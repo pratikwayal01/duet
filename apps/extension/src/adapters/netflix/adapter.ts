@@ -1,5 +1,5 @@
 import type { AdapterContext, PlayerAdapter, PlayerHandle } from '../types.ts';
-import { MANUAL_SYNC_BANNER } from '../types.ts';
+import { MANUAL_SYNC_BANNER, matchesDomain } from '../types.ts';
 import { createGenericAdapter } from '../generic/adapter.ts';
 
 // Netflix: direct currentTime seeks break the player — drive it via the
@@ -15,7 +15,7 @@ function numericId(url: URL): string | null {
 
 export const netflixAdapter: PlayerAdapter = {
   id: 'netflix',
-  matches: (url: URL) => url.hostname.endsWith('netflix.com') && url.pathname.startsWith('/watch/'),
+  matches: (url: URL) => matchesDomain(url.hostname, 'netflix.com') && url.pathname.startsWith('/watch/'),
   titleId: (url: URL) => {
     const id = numericId(url);
     return id ? `netflix:${id}` : null;

@@ -35,17 +35,20 @@ const SESSION_KEY = 'duet:room';
 
 // ponytail: lightweight URL matchers duplicated from adapters/* so the popup
 // bundle stays small (importing adapters would pull player code in here).
+// matchesDomain lives in the types-only module — no player code pulled in.
+import { matchesDomain } from '../adapters/types.ts';
+
 const SERVICES: { label: string; test: (u: URL) => boolean }[] = [
-  { label: 'Netflix', test: (u) => u.hostname.endsWith('netflix.com') && u.pathname.startsWith('/watch/') },
-  { label: 'YouTube', test: (u) => u.hostname.endsWith('youtube.com') && u.pathname === '/watch' },
+  { label: 'Netflix', test: (u) => matchesDomain(u.hostname, 'netflix.com') && u.pathname.startsWith('/watch/') },
+  { label: 'YouTube', test: (u) => matchesDomain(u.hostname, 'youtube.com') && u.pathname === '/watch' },
   {
     label: 'Prime Video',
     test: (u) =>
-      /(^|\.)amazon\./.test(u.hostname) || u.hostname.endsWith('primevideo.com'),
+      /(^|\.)amazon\./.test(u.hostname) || matchesDomain(u.hostname, 'primevideo.com'),
   },
   {
     label: 'JioHotstar',
-    test: (u) => u.hostname.endsWith('hotstar.com') || u.hostname.endsWith('jiohotstar.com'),
+    test: (u) => matchesDomain(u.hostname, 'hotstar.com', 'jiohotstar.com'),
   },
 ];
 

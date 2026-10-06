@@ -1,5 +1,5 @@
 import type { AdapterContext, PlayerAdapter, PlayerHandle } from '../types.ts';
-import { MANUAL_SYNC_BANNER } from '../types.ts';
+import { MANUAL_SYNC_BANNER, matchesDomain } from '../types.ts';
 import { createGenericAdapter } from '../generic/adapter.ts';
 
 // Prime Video: drive via page-world bridge (postMessage + nonce) once the
@@ -15,7 +15,7 @@ function asin(url: URL): string | null {
 export const primeAdapter: PlayerAdapter = {
   id: 'prime',
   matches: (url: URL) =>
-    (/(^|\.)amazon\./.test(url.hostname) || url.hostname.endsWith('primevideo.com')) &&
+    (/(^|\.)amazon\./.test(url.hostname) || matchesDomain(url.hostname, 'primevideo.com')) &&
     /\/(?:gp\/video\/detail|dp)\/[A-Z0-9]{10}/i.test(url.pathname),
   titleId: (url: URL) => {
     const id = asin(url);

@@ -1,5 +1,5 @@
 import type { AdapterContext, PlayerAdapter, PlayerHandle } from '../types.ts';
-import { MANUAL_SYNC_BANNER } from '../types.ts';
+import { MANUAL_SYNC_BANNER, matchesDomain } from '../types.ts';
 import { createGenericAdapter } from '../generic/adapter.ts';
 
 // TODO [verify domains]: confirm exact JioHotstar (JioStar) watch domains and
@@ -11,7 +11,7 @@ export const MANUAL_SYNC = MANUAL_SYNC_BANNER;
 export const jiohotstarAdapter: PlayerAdapter = {
   id: 'jiohotstar',
   matches: (url: URL) =>
-    url.hostname.endsWith('hotstar.com') || url.hostname.endsWith('jiohotstar.com'),
+    matchesDomain(url.hostname, 'hotstar.com', 'jiohotstar.com'),
   titleId: (url: URL) => {
     const segs = url.pathname.split('/').filter(Boolean);
     const id = segs[segs.length - 1];

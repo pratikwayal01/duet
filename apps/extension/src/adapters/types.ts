@@ -59,3 +59,12 @@ export const DRIFT = {
 /** Shown when an adapter can't drive the player (PRD §7.3). */
 export const MANUAL_SYNC_BANNER =
   "Can't control this player — use the Resync button, or keep playback in step manually.";
+
+/**
+ * Suffix host check that can't be fooled by `evilnetflix.com`:
+ * exact match or a real subdomain boundary (`x.netflix.com`).
+ */
+export function matchesDomain(hostname: string, ...domains: string[]): boolean {
+  const h = hostname.toLowerCase();
+  return domains.some((d) => h === d || h.endsWith(`.${d}`));
+}

@@ -1,4 +1,5 @@
 import type { AdapterContext, PlayerAdapter, PlayerHandle } from '../types.ts';
+import { matchesDomain } from '../types.ts';
 import { createGenericAdapter } from '../generic/adapter.ts';
 
 // YouTube: plain <video> seeks are safe here, so generic delegation is the
@@ -7,7 +8,7 @@ import { createGenericAdapter } from '../generic/adapter.ts';
 export const youtubeAdapter: PlayerAdapter = {
   id: 'youtube',
   matches: (url: URL) =>
-    (url.hostname.endsWith('youtube.com') || url.hostname === 'youtu.be') &&
+    (matchesDomain(url.hostname, 'youtube.com') || url.hostname === 'youtu.be') &&
     (url.pathname === '/watch' || url.hostname === 'youtu.be'),
   titleId: (url: URL) => {
     const v = url.hostname === 'youtu.be' ? url.pathname.slice(1) : url.searchParams.get('v');
