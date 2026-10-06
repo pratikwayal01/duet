@@ -23,6 +23,10 @@ describe("valid messages", () => {
       { ...base, t: "ice-answer", roomId: "r1", from: "c1", sdp: "v=0" },
       { ...base, t: "ice-candidate", roomId: "r1", from: "c1", candidate: "cand" },
       { ...base, t: "control", roomId: "r1", command: "duck", args: { level: 0.3 } },
+      { ...base, t: "knock", roomId: "r1", clientId: "c2", name: "Bob" },
+      { ...base, t: "knocking", roomId: "r1" },
+      { ...base, t: "admit", roomId: "r1", target: "c2" },
+      { ...base, t: "deny", roomId: "r1", target: "c2" },
     ];
     expect(samples).toHaveLength(MESSAGE_TYPES.length);
     for (const s of samples) {

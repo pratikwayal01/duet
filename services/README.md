@@ -10,6 +10,7 @@ fatals use WS close codes since the protocol has no error type:
 | Code | Meaning                                  |
 | ---- | ---------------------------------------- |
 | 4409 | room-full (HTTP upgrade also gets 409)   |
+| 4403 | join-denied (host declined the knock)    |
 | 4429 | rate-limited                             |
 | 4400 | join-first / wrong-room / other protocol |
 | 1007 | bad JSON / schema / version              |
@@ -22,8 +23,9 @@ has no protocol type yet — clients assume both-can-control until one ships.
 
 | Method | Path      | Behavior                                                                 |
 | ------ | --------- | ------------------------------------------------------------------------ |
-| GET    | /api/room | Mint a 128-bit base32 room id (26 chars). Room materializes on first WS. |
-| WS     | /room/:id | Join (2-conn cap, else 409 + `room-full`), signal relay via `RoomCore`.  |
+| GET    | /api/room | Mint `{id, code}`: 128-bit base32 id + 6-char invite code (10 min TTL). Room materializes on first WS. |
+| WS     | /room/:id | Join by full id **or** short code (2-conn cap, else 409 + `room-full`), signal relay via `RoomCore`. Second hello knocks: waiter gets `knocking`, host gets `knock`; host `admit`/`deny` decides. |
+| GET    | /api/resolve?code= | Resolve a short code to `{roomId}` (404 `bad-code` when unknown/expired). |
 | GET    | /api/ice  | TURN credentials (daily cap, per-IP limit) or P2P-only fallback. When `SIGNAL_API_KEY` is set, keyless callers (`Authorization: Bearer <key>` or `?key=`) get the P2P-only body (200, no quota consumed). |
 | GET    | /api/health | Liveness (`{ok:true}`; also Render health check).                      |
 

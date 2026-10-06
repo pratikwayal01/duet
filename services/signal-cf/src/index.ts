@@ -1,11 +1,44 @@
 // Worker entry: routes + CORS + per-IP rate limits. Room state lives in the Room DO.
 import { ICE_INTERNAL_PATH, ICE_SINGLETON_NAME, SlidingWindow, isRoomId, newRoomId } from './room-do';
+import { CODE_ALPHABET, CODE_LENGTH } from '@duet/room-core';
 import type { Env } from './room-do';
 
 export { Room } from './room-do';
 
 const HTTP_PER_IP_LIMIT = 60; // requests per minute per IP (room create + ICE)
 const HTTP_WINDOW_MS = 60_000;
+
+// Pending short invite codes for lazy rooms. Worker memory only: eviction
+// drops codes (rooms themselves live in DOs, unaffected). Documented in
+// services/README — signal-node's in-process map is the durable one.
+const pendingCodes = new Map<string, { roomId: string; createdAt: number }>();
+const CODE_TTL_MS = 10 * 60 * 1000;
+
+function sweepCodes(): void {
+  const now = Date.now();
+  for (const [code, p] of pendingCodes) {
+    if (now - p.createdAt > CODE_TTL_MS) pendingCodes.delete(code);
+  }
+}
+
+function mintPending(): { id: string; code: string } {
+  sweepCodes();
+  const id = newRoomId(crypto.getRandomValues(new Uint8Array(16)));
+  let code = '';
+  for (let i = 0; i < 50; i++) {
+    code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
+    if (!pendingCodes.has(code)) break;
+  }
+  pendingCodes.set(code, { roomId: id, createdAt: Date.now() });
+  return { id, code };
+}
+
+function resolveRoom(token: string): string | null {
+  const upper = token.toUpperCase();
+  if (isRoomId(upper)) return upper;
+  sweepCodes();
+  return pendingCodes.get(upper)?.roomId ?? null;
+}
 
 const httpLimiter = new SlidingWindow(HTTP_PER_IP_LIMIT, HTTP_WINDOW_MS);
 
@@ -65,9 +98,16 @@ export default {
       if (!httpLimiter.allow(`room:${clientIp(request)}`)) {
         return withCors(Response.json({ error: 'rate-limited' }, { status: 429 }), cors);
       }
-      // Lazy room: id minted here, DO materializes on first WS connect.
-      const id = newRoomId(crypto.getRandomValues(new Uint8Array(16)));
-      return withCors(Response.json({ id }), cors);
+      // Lazy room: id + short code minted here, DO materializes on first WS hello.
+      return withCors(Response.json(mintPending()), cors);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/resolve') {
+      const roomId = resolveRoom(url.searchParams.get('code') ?? '');
+      if (!roomId) {
+        return withCors(Response.json({ error: 'bad-code' }, { status: 404 }), cors);
+      }
+      return withCors(Response.json({ roomId }), cors);
     }
 
     if (request.method === 'GET' && url.pathname === '/api/ice') {
@@ -90,8 +130,9 @@ export default {
     }
 
     if (url.pathname.startsWith('/room/')) {
-      const id = (url.pathname.split('/')[2] ?? '').toUpperCase();
-      if (!isRoomId(id)) {
+      // Full id passes straight through; short invite codes resolve via the map.
+      const id = resolveRoom(url.pathname.split('/')[2] ?? '');
+      if (!id) {
         return withCors(Response.json({ error: 'bad-room-id' }, { status: 400 }), cors);
       }
       if (request.headers.get('Upgrade') !== 'websocket') {

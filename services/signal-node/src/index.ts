@@ -6,12 +6,12 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import {
   MAX_MSG_BYTES,
+  PUBLIC_RELAY,
   ROOM_CAP,
   RoomRegistry,
   SlidingWindow,
   isRoomId,
   mintIceBody,
-  newRoomId,
 } from './room.js';
 
 const PORT = Number(process.env.PORT ?? '8787') || 8787;
@@ -25,13 +25,31 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) =
 const TURN_URLS = (process.env.TURN_URLS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 function turnConfig() {
+  const dailyCap = Number(process.env.ICE_DAILY_CAP ?? '200') || 200;
+  const ttlSeconds = Number(process.env.TURN_TTL_SECONDS ?? '86400') || 86400;
+  // Explicit "none" keeps strict P2P-only mode.
+  if ((process.env.TURN_URLS ?? '').trim().toLowerCase() === 'none') {
+    return { urls: [], secret: undefined, username: undefined, password: undefined, ttlSeconds, dailyCap };
+  }
+  // Self-hosted relay (BYO TURN).
+  if (TURN_URLS.length > 0) {
+    return {
+      urls: TURN_URLS,
+      secret: process.env.TURN_SECRET || undefined,
+      username: process.env.TURN_USERNAME || undefined,
+      password: process.env.TURN_PASSWORD || undefined,
+      ttlSeconds,
+      dailyCap,
+    };
+  }
+  // Default: Metered's public demo relay (no signup, no keys, best-effort).
   return {
-    urls: TURN_URLS,
-    secret: process.env.TURN_SECRET || undefined,
-    username: process.env.TURN_USERNAME || undefined,
-    password: process.env.TURN_PASSWORD || undefined,
-    ttlSeconds: Number(process.env.TURN_TTL_SECONDS ?? '86400') || 86400,
-    dailyCap: Number(process.env.ICE_DAILY_CAP ?? '200') || 200,
+    urls: [...PUBLIC_RELAY.urls],
+    secret: undefined,
+    username: PUBLIC_RELAY.username,
+    password: PUBLIC_RELAY.password,
+    ttlSeconds,
+    dailyCap,
   };
 }
 
@@ -91,7 +109,18 @@ const server = createServer((req, res) => {
       json(res, 429, { error: 'rate-limited' });
       return;
     }
-    json(res, 200, { id: newRoomId() }); // lazy: room materializes on first WS connect
+    json(res, 200, registry.mintPending()); // {id, code}; room materializes on first WS hello
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/resolve') {
+    const code = url.searchParams.get('code') ?? '';
+    const roomId = registry.resolveRoom(code);
+    if (!roomId) {
+      json(res, 404, { error: 'bad-code' });
+      return;
+    }
+    json(res, 200, { roomId });
     return;
   }
 
@@ -117,8 +146,10 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MSG_BYTES });
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const match = /^\/room\/([A-Za-z2-7]+)$/.exec(url.pathname);
-  const id = (match?.[1] ?? '').toUpperCase();
-  if (!match || !isRoomId(id)) {
+  const token = (match?.[1] ?? '').toUpperCase();
+  // Full id passes straight through; short invite codes resolve via the map.
+  const id = registry.resolveRoom(token);
+  if (!match || !id || !isRoomId(id)) {
     socket.write('HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\n\r\n{"error":"bad-room-id"}');
     socket.destroy();
     return;

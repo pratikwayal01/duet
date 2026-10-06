@@ -126,13 +126,20 @@ export class RoomClient {
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(signalUrl(roomId));
       const timer = window.setTimeout(() => {
-        ws.close();
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
         reject(new Error('signal timeout'));
-      }, 4000);
+      }, 20000);
       ws.onopen = () => {
         window.clearTimeout(timer);
         this.ws = ws;
-        ws.send(JSON.stringify({ v: 1, t: 'hello', id: crypto.randomUUID(), name }));
+        // Mark joined server-side (clientId required; secret never leaves the fragment).
+        ws.send(JSON.stringify({
+          v: 1, t: 'hello', id: crypto.randomUUID(), clientId: crypto.randomUUID(), name,
+        }));
         resolve();
       };
       ws.onerror = () => {

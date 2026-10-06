@@ -5,6 +5,11 @@ export const INTENT_WINDOW_MS = 150; // concurrent intents inside this window re
 export const MAX_MESSAGES_PER_SECOND = 20;
 export const IDLE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12h, PRD §5.1
 export const REJOIN_WINDOW_MS = 10 * 60 * 1000; // 10min, PRD §5.1
+export const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // unambiguous, no 0/O/1/I
+export const CODE_LENGTH = 6;
+
+// Short invite codes live in the signal adapters (pending map for lazy
+// rooms), not here: this class only tracks admitted state.
 
 export interface RoomCoreOptions {
   now?: () => number;
@@ -17,13 +22,14 @@ export interface RoomCoreOptions {
 interface Member {
   clientId: string;
   role: Role;
+  approved: boolean; // false = knocking, waiting for host admit
   displayName?: string;
 }
 
 interface Room {
   id: string;
   members: Map<string, Member>;
-  departed: Map<string, { role: Role; leftAt: number; displayName?: string }>;
+  departed: Map<string, { role: Role; approved: boolean; leftAt: number; displayName?: string }>;
   state: PlaybackState;
   lock: LockMode;
   createdAt: number;
@@ -56,7 +62,7 @@ export class RoomCore {
     if (existing && !this.isExpired(existing, now)) return { ok: false, error: "exists" };
     const room: Room = {
       id: roomId,
-      members: new Map([[hostId, { clientId: hostId, role: "host", displayName }]]),
+      members: new Map([[hostId, { clientId: hostId, role: "host", approved: true, displayName }]]),
       departed: new Map(),
       state: { rev: 0, titleId: "", playing: false, position: 0, refServerTime: now, rate: 1, controllerId: hostId },
       lock: "both",
@@ -68,7 +74,11 @@ export class RoomCore {
     return { ok: true, role: "host", state: { ...room.state } };
   }
 
-  joinRoom(roomId: string, clientId: string, displayName?: string): Result<{ role: Role; state: PlaybackState }> {
+  joinRoom(
+    roomId: string,
+    clientId: string,
+    displayName?: string,
+  ): Result<{ role: Role; state?: PlaybackState; knocking?: boolean }> {
     const now = this.clock();
     const room = this.rooms.get(roomId);
     if (!room || this.isExpired(room, now)) {
@@ -79,27 +89,73 @@ export class RoomCore {
     if (active) {
       if (displayName !== undefined) active.displayName = displayName;
       room.lastActivityAt = now;
+      if (!active.approved) return { ok: true, role: active.role, knocking: true };
       return { ok: true, role: active.role, state: { ...room.state } };
     }
-    // Rejoin inside the window restores role and state (PRD §5.1).
+    // Rejoin inside the window restores role and approval (PRD §5.1). A
+    // denied guest knocks again instead of walking back in.
     const prev = room.departed.get(clientId);
     if (prev && now - prev.leftAt <= this.rejoinWindowMs) {
       if (room.members.size >= MAX_PARTICIPANTS && !this.freesSeat(room, prev.role)) {
         return { ok: false, error: "room-full" };
       }
       room.departed.delete(clientId);
-      room.members.set(clientId, { clientId, role: prev.role, displayName: displayName ?? prev.displayName });
+      room.members.set(clientId, { clientId, role: prev.role, approved: prev.approved, displayName: displayName ?? prev.displayName });
       room.lastActivityAt = now;
+      if (!prev.approved) return { ok: true, role: prev.role, knocking: true };
       return { ok: true, role: prev.role, state: { ...room.state } };
     }
     if (prev) room.departed.delete(clientId); // window lapsed: treat as new
     if (room.members.size >= MAX_PARTICIPANTS) return { ok: false, error: "room-full" };
-    // First active member holds the host seat; everyone else is a guest.
+    // Someone approved is already here: knock, don't walk in. The host
+    // admits or denies; the waiter gets no state until then.
+    const hasApproved = [...room.members.values()].some((m) => m.approved);
+    if (hasApproved) {
+      room.members.set(clientId, { clientId, role: "guest", approved: false, displayName });
+      room.lastActivityAt = now;
+      return { ok: true, role: "guest", knocking: true };
+    }
+    // Empty room (host gone): first active member holds the host seat.
     const role: Role = [...room.members.values()].some((m) => m.role === "host") ? "guest" : "host";
-    room.members.set(clientId, { clientId, role, displayName });
+    room.members.set(clientId, { clientId, role, approved: true, displayName });
     room.lastActivityAt = now;
     return { ok: true, role, state: { ...room.state } };
   }
+
+  // Host admits a knocking guest. Returns fresh state for both sides.
+  admit(roomId: string, approverId: string, targetId: string): Result<{ state: PlaybackState }> {
+    const room = this.rooms.get(roomId);
+    if (!room || this.isExpired(room, this.clock())) return { ok: false, error: "not-found" };
+    const approver = room.members.get(approverId);
+    if (!approver || !approver.approved) return { ok: false, error: "not-in-room" };
+    if (approver.role !== "host") return { ok: false, error: "not-host" };
+    const target = room.members.get(targetId);
+    if (!target || target.approved) return { ok: false, error: "not-knocking" };
+    target.approved = true;
+    target.role = "guest";
+    room.lastActivityAt = this.clock();
+    return { ok: true, state: { ...room.state } };
+  }
+
+  // Host denies a knocking guest. They leave no approved seat behind; a
+  // rejoin knocks again instead of restoring.
+  deny(roomId: string, approverId: string, targetId: string): Result<{ state: PlaybackState }> {
+    const room = this.rooms.get(roomId);
+    if (!room || this.isExpired(room, this.clock())) return { ok: false, error: "not-found" };
+    const approver = room.members.get(approverId);
+    if (!approver || !approver.approved) return { ok: false, error: "not-in-room" };
+    if (approver.role !== "host") return { ok: false, error: "not-host" };
+    const target = room.members.get(targetId);
+    if (!target || target.approved) return { ok: false, error: "not-knocking" };
+    room.members.delete(targetId);
+    room.departed.set(targetId, { role: "guest", approved: false, leftAt: this.clock(), displayName: target.displayName });
+    room.lastActivityAt = this.clock();
+    return { ok: true, state: { ...room.state } };
+  }
+
+  // Short invite codes for lazy (not-yet-created) rooms live in the signal
+  // adapters' pending maps; once a room exists, its full id is the key.
+  // CODE_ALPHABET/CODE_LENGTH are shared here so both adapters agree.
 
   leaveRoom(roomId: string, clientId: string): void {
     const room = this.rooms.get(roomId);
@@ -107,7 +163,7 @@ export class RoomCore {
     const member = room.members.get(clientId);
     if (!member) return;
     room.members.delete(clientId);
-    room.departed.set(clientId, { role: member.role, leftAt: this.clock(), displayName: member.displayName });
+    room.departed.set(clientId, { role: member.role, approved: member.approved, leftAt: this.clock(), displayName: member.displayName });
     room.lastActivityAt = this.clock();
   }
 
@@ -115,7 +171,7 @@ export class RoomCore {
     const room = this.rooms.get(roomId);
     if (!room) return { ok: false, error: "not-found" };
     const member = room.members.get(clientId);
-    if (!member) return { ok: false, error: "not-in-room" };
+    if (!member || !member.approved) return { ok: false, error: "not-in-room" };
     if (member.role !== "host") return { ok: false, error: "not-host" };
     room.lock = lock;
     room.lastActivityAt = this.clock();
@@ -132,7 +188,7 @@ export class RoomCore {
       return { ok: false, error: "not-found" };
     }
     const member = room.members.get(clientId);
-    if (!member) return { ok: false, error: "not-in-room" };
+    if (!member || !member.approved) return { ok: false, error: "not-in-room" };
     if (!this.consumeRate(clientId, now)) return { ok: false, error: "rate-limited" };
     if (room.lock === "host" && member.role !== "host") return { ok: false, error: "not-controller" };
     if (!this.validateIntent(input)) return { ok: false, error: "bad-intent" };
@@ -154,6 +210,14 @@ export class RoomCore {
 
   memberCount(roomId: string): number {
     return this.rooms.get(roomId)?.members.size ?? 0;
+  }
+
+  approvedCount(roomId: string): number {
+    const room = this.rooms.get(roomId);
+    if (!room) return 0;
+    let n = 0;
+    for (const m of room.members.values()) if (m.approved) n++;
+    return n;
   }
 
   // Remove rooms idle past the expiry. Returns purged room ids.

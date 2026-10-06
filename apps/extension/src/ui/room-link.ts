@@ -56,8 +56,8 @@ export function signalUrl(base: string, roomId: string): string {
   return u.toString();
 }
 
-/** Mint a server-side room id (128-bit base32; local ids are rejected). */
-export async function mintRoom(base: string, apiKey?: string): Promise<string> {
+/** Mint a server-side room: full id + short invite code (rooms stay lazy). */
+export async function mintRoom(base: string, apiKey?: string): Promise<{ id: string; code: string | null }> {
   const headers: Record<string, string> = {};
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   let res: Response;
@@ -72,9 +72,9 @@ export async function mintRoom(base: string, apiKey?: string): Promise<string> {
     throw new Error('unreachable');
   }
   if (!res.ok) throw new Error(`room mint failed: ${res.status}`);
-  const body = (await res.json()) as { id?: string };
+  const body = (await res.json()) as { id?: string; code?: string };
   if (!body.id) throw new Error('room mint failed: bad response');
-  return body.id;
+  return { id: body.id, code: body.code ?? null };
 }
 
 /** Optional API key for self-hosted signal servers (sent as Bearer on

@@ -23,6 +23,7 @@ interface RoomSession {
   url?: string;
   base?: string | null;
   secret?: string | null;
+  code?: string | null;
   // ponytail: signaling (M2) will add peer/sync fields here; until then room
   // presence alone drives the UI and sync details render honest stubs.
   status?: 'connected' | 'reconnecting';
@@ -70,9 +71,9 @@ function el<T extends HTMLElement>(id: string): T {
   return n as T;
 }
 
-async function send(cmd: string, extra: Record<string, string> = {}): Promise<{ ok?: boolean; error?: string } | null> {
+async function send(cmd: string, extra: Record<string, string> = {}): Promise<{ ok?: boolean; error?: string; knocking?: boolean } | null> {
   try {
-    return (await chrome.runtime.sendMessage({ cmd, ...extra })) as { ok?: boolean; error?: string } | null;
+    return (await chrome.runtime.sendMessage({ cmd, ...extra })) as { ok?: boolean; error?: string; knocking?: boolean } | null;
   } catch {
     return null;
   }
@@ -196,14 +197,23 @@ function wireHome(service: string | null): void {
     setStatus('Starting your room…');
     try {
       const base = await getBase();
-      const roomId = await mintRoom(base, await getApiKey());
+      const minted = await mintRoom(base, await getApiKey());
+      const roomId = minted.id;
       const secret = makeSecret();
       const res = await send('duet:join', { url: signalUrl(base, roomId), roomId, base, secret });
       if (res?.ok) {
+        // Persist the short code for display (worker owns the rest).
+        try {
+          const got = (await chrome.storage.session.get(SESSION_KEY)) as Record<string, unknown>;
+          const cur = (got[SESSION_KEY] ?? {}) as Record<string, unknown>;
+          await chrome.storage.session.set({ [SESSION_KEY]: { ...cur, code: minted.code } });
+        } catch {
+          /* display-only */
+        }
         const link = inviteUrl(base, roomId, secret);
         try {
           await navigator.clipboard.writeText(link);
-          setStatus('Room started — invite link copied, send it to them.');
+          setStatus(minted.code ? `Room ${minted.code} started — link copied, send the code or link.` : 'Room started — invite link copied, send it to them.');
         } catch {
           setStatus('Room started.');
         }
@@ -227,10 +237,26 @@ function wireHome(service: string | null): void {
     }
     if (parsed.base) void setBase(parsed.base);
     const base = parsed.base ?? (await getBase());
+    // Short invite codes (6 chars) resolve to the full room id server-side.
+    let roomId = parsed.roomId;
+    if (/^[A-Z2-9]{6}$/i.test(parsed.roomId)) {
+      setStatus('Looking up that code…');
+      try {
+        const res = await fetch(`${base.replace(/\/$/, '')}/api/resolve?code=${encodeURIComponent(parsed.roomId)}`);
+        if (!res.ok) throw new Error('bad-code');
+        const body = (await res.json()) as { roomId?: string };
+        if (!body.roomId) throw new Error('bad-code');
+        roomId = body.roomId;
+      } catch {
+        setStatus("Couldn't find that code — check it and try again.");
+        return;
+      }
+    }
     setStatus('Joining…');
-    const res = await send('duet:join', { url: signalUrl(base, parsed.roomId), roomId: parsed.roomId });
+    const res = await send('duet:join', { url: signalUrl(base, roomId), roomId });
     if (res?.ok) {
       await boot();
+      if (res.knocking) setStatus('Knocking… the host lets you in.');
     } else {
       await boot('lost', res?.error ? `Couldn't join: ${res.error}` : undefined);
     }
@@ -282,7 +308,7 @@ function roomView(room: RoomSession): string {
 function wireRoom(room: RoomSession): void {
   void initTheme(el<HTMLButtonElement>('theme'));
   wireShell();
-  el<HTMLElement>('roomcode').textContent = room.roomId;
+  el<HTMLElement>('roomcode').textContent = room.code ?? room.roomId;
   if (room.base && room.secret) {
     const link = inviteUrl(room.base, room.roomId, room.secret);
     const row = document.getElementById('inviterow');
@@ -329,24 +355,31 @@ function wireRoom(room: RoomSession): void {
   both.addEventListener('click', () => pick(false));
   me.addEventListener('click', () => pick(true));
 
-  const toggle = (id: string, on: string, off: string) => {
-    const b = el<HTMLButtonElement>(id);
-    b.addEventListener('click', () => {
-      const pressed = b.getAttribute('aria-pressed') !== 'true';
-      b.setAttribute('aria-pressed', String(pressed));
-      b.setAttribute('aria-label', pressed ? on : off);
-      if (id === 'c-resync') setStatus('Catching up…');
-    });
-  };
-  toggle('c-mic', 'Unmute microphone', 'Mute microphone');
-  toggle('c-cam', 'Turn camera on', 'Turn camera off');
+  // Voice/video calls arrive in M4 — no fake toggles. Honest toast instead.
+  const soon = 'Voice and video calls arrive in M4 — use any call app alongside for now.';
+  el<HTMLButtonElement>('c-resync').addEventListener('click', async () => {
+    setStatus('Catching up…');
+    try {
+      const tabs = (chrome as unknown as {
+        tabs?: { query: (q: object) => Promise<{ id?: number }[]> };
+      }).tabs;
+      const [tab] = (await tabs?.query({ active: true, currentWindow: true })) ?? [];
+      if (tab?.id == null) {
+        setStatus('Open the video tab, then resync.');
+        return;
+      }
+      const res = await send('duet:resync', { tabId: String(tab.id) });
+      setStatus(res?.ok ? 'Caught up.' : (res?.error ?? "Couldn't resync."));
+    } catch {
+      setStatus("Couldn't resync.");
+    }
+  });
   el<HTMLButtonElement>('c-chat').addEventListener('click', async () => {
     try {
-      // ponytail: side panel entry point differs per manifest; guard + hint.
       await chrome.sidePanel.open({});
       window.close();
     } catch {
-      setStatus('Open the side panel to keep chatting.');
+      setStatus('Side panel unavailable — pin it from the browser toolbar, then retry.');
     }
   });
 

@@ -113,6 +113,38 @@ export const controlMessage = z.object({
   args: z.unknown().optional(),
 });
 
+// Knock-to-join (host approval). Second hello in an occupied room makes the
+// joiner "knocking": server broadcasts `knock` to approved members, sends
+// `knocking` to the waiter. Host replies `admit`/`deny` with the target.
+// On admit the waiter gets `state`; on deny the socket closes (4403).
+export const knockMessage = z.object({
+  ...envelope,
+  t: z.literal("knock"),
+  roomId,
+  clientId: z.string().min(1).max(128),
+  name: z.string().max(64).optional(),
+});
+
+export const knockingMessage = z.object({
+  ...envelope,
+  t: z.literal("knocking"),
+  roomId,
+});
+
+export const admitMessage = z.object({
+  ...envelope,
+  t: z.literal("admit"),
+  roomId,
+  target: z.string().min(1).max(128),
+});
+
+export const denyMessage = z.object({
+  ...envelope,
+  t: z.literal("deny"),
+  roomId,
+  target: z.string().min(1).max(128),
+});
+
 export const messageSchema = z.discriminatedUnion("t", [
   helloMessage,
   joinMessage,
@@ -126,6 +158,10 @@ export const messageSchema = z.discriminatedUnion("t", [
   iceAnswerMessage,
   iceCandidateMessage,
   controlMessage,
+  knockMessage,
+  knockingMessage,
+  admitMessage,
+  denyMessage,
 ]);
 
 export type Message = z.infer<typeof messageSchema>;
@@ -144,4 +180,8 @@ export const MESSAGE_TYPES = [
   "ice-answer",
   "ice-candidate",
   "control",
+  "knock",
+  "knocking",
+  "admit",
+  "deny",
 ] as const satisfies readonly MessageType[];

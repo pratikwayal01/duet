@@ -31,6 +31,24 @@ export default defineContentScript({
         roomActive = false;
         detachAll();
       }
+      // Resync: jump the local player to the room's expected position.
+      // Attaches on demand — this is also the first real attach path (M2
+      // will keep the loop attached for the whole room instead).
+      if (m.cmd === 'duet:apply-state') {
+        const s = msg as { position?: number; playing?: boolean };
+        if (typeof s.position !== 'number') return;
+        void (async () => {
+          const handle = await attachWhenRoomActive(ADAPTERS, { nonce: '', rateNudge: true }, () => true);
+          if (!handle) return;
+          try {
+            await handle.seek(Math.max(0, s.position ?? 0));
+            if (s.playing) await handle.play();
+            else handle.pause();
+          } catch {
+            /* player refused: manual-sync banner path (adapter handles it) */
+          }
+        })();
+      }
     });
   },
 });

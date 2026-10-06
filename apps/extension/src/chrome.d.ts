@@ -36,6 +36,7 @@ declare namespace chrome {
   }
   namespace tabs {
     function create(options: { url: string }): Promise<unknown>;
+    function sendMessage(tabId: number, msg: unknown): Promise<unknown>;
   }
   namespace management {
     function uninstallSelf(options?: { showConfirmDialog?: boolean }): Promise<void>;

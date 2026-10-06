@@ -37,10 +37,11 @@ interface Attachment {
   clientId: string;
   ip: string;
   joined: boolean;
+  approved: boolean;
   stamps: number[]; // inbound frame timestamps for the sliding window
 }
 
-type MemberResult = Result<{ role: 'host' | 'guest'; state: PlaybackState }>;
+type MemberResult = Result<{ role: 'host' | 'guest'; state?: PlaybackState; knocking?: boolean }>;
 
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -97,8 +98,33 @@ function stateFrame(roomId: string, state: PlaybackState): Message {
   return { v: PROTOCOL_VERSION, t: 'state', id: crypto.randomUUID(), roomId, state };
 }
 
+function knockFrame(roomId: string, clientId: string, name?: string): Message {
+  return {
+    v: PROTOCOL_VERSION, t: 'knock', id: crypto.randomUUID(), roomId, clientId,
+    ...(name ? { name } : {}),
+  };
+}
+
+function knockingFrame(roomId: string): Message {
+  return { v: PROTOCOL_VERSION, t: 'knocking', id: crypto.randomUUID(), roomId };
+}
+
+// Metered's published public demo relay (no signup, no keys, best-effort).
+// "none" keeps strict P2P-only mode.
+const PUBLIC_RELAY_URLS = ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'];
+const PUBLIC_RELAY_USER = 'openrelayproject';
+const PUBLIC_RELAY_PASS = 'openrelayproject';
+
+function turnUrls(env: Env): { urls: string[]; public: boolean } {
+  const raw = (env.TURN_URLS ?? '').trim();
+  if (raw.toLowerCase() === 'none') return { urls: [], public: false };
+  const urls = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (urls.length > 0) return { urls, public: false };
+  return { urls: [...PUBLIC_RELAY_URLS], public: true };
+}
+
 async function mintIce(env: Env): Promise<Response> {
-  const urls = (env.TURN_URLS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const { urls, public: isPublic } = turnUrls(env);
   if (urls.length === 0) {
     // P2P-only mode: no TURN configured. Client fails cleanly with advice
     // (try Sync mode, change network). Does NOT consume daily quota.
@@ -129,8 +155,12 @@ async function mintIce(env: Env): Promise<Response> {
   }
   return Response.json({
     urls,
-    ...(env.TURN_USERNAME ? { username: env.TURN_USERNAME } : {}),
-    ...(env.TURN_PASSWORD ? { credential: env.TURN_PASSWORD } : {}),
+    ...(isPublic
+      ? { username: PUBLIC_RELAY_USER, credential: PUBLIC_RELAY_PASS }
+      : {
+          ...(env.TURN_USERNAME ? { username: env.TURN_USERNAME } : {}),
+          ...(env.TURN_PASSWORD ? { credential: env.TURN_PASSWORD } : {}),
+        }),
     ttl,
   });
 }
@@ -199,9 +229,9 @@ export class Room {
       // key is configured and the caller lacks it: P2P-only, no quota consumed.
       const keyed = (this.env.SIGNAL_API_KEY ?? '') !== '';
       const authed = request.headers.get('x-ice-authorized') === '1' || !keyed;
-      if (!authed) return mintIce({ ...this.env, TURN_URLS: '' });
-      const noTurn = !(this.env.TURN_URLS ?? '').split(',').map((s) => s.trim()).filter(Boolean).length;
-      if (noTurn) return mintIce(this.env); // p2pOnly, no quota consumed
+      if (!authed) return mintIce({ ...this.env, TURN_URLS: 'none' });
+      const { urls } = turnUrls(this.env);
+      if (urls.length === 0) return mintIce(this.env); // strict P2P ("none"), no quota consumed
       const cap = Number(this.env.ICE_DAILY_CAP ?? '200') || 200;
       const quota = takeIceQuota(this.ctx.storage.sql, cap);
       if (!quota.ok) {
@@ -231,7 +261,7 @@ export class Room {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ clientId, ip, joined: false, stamps: [] } satisfies Attachment);
+    server.serializeAttachment({ clientId, ip, joined: false, approved: false, stamps: [] } satisfies Attachment);
 
     if (!this.alarmSet) {
       this.alarmSet = true;
@@ -302,6 +332,16 @@ export class Room {
         }
         att.clientId = newId;
         att.joined = true;
+        // Second hello in an occupied room knocks: waiter gets `knocking`,
+        // approved members get `knock`, no state leaks to the waiter.
+        if (res.knocking || !res.state) {
+          att.approved = false;
+          ws.serializeAttachment(att);
+          this.send(ws, knockingFrame(this.roomId));
+          this.broadcast(knockFrame(this.roomId, newId, msg.name), ws);
+          return;
+        }
+        att.approved = true;
         ws.serializeAttachment(att);
         this.send(ws, stateFrame(this.roomId, res.state));
         this.broadcast(stateFrame(this.roomId, res.state), ws); // resync peer
@@ -314,7 +354,7 @@ export class Room {
         return;
       }
       case 'intent': {
-        if (!att.joined) {
+        if (!att.joined || !att.approved) {
           this.close(ws, 4400, 'join-first');
           return;
         }
@@ -344,9 +384,43 @@ export class Room {
       case 'pong':
         ws.serializeAttachment(att);
         return; // client echoing; nothing to do
+      case 'admit': {
+        if (!att.joined || !att.approved) {
+          this.close(ws, 4400, 'join-first');
+          return;
+        }
+        const res = this.core.admit(this.roomId, att.clientId, msg.target);
+        if (!res.ok) return; // not-host / not-knocking: ignore
+        for (const other of this.ctx.getWebSockets()) {
+          const oatt = other.deserializeAttachment() as Attachment | null;
+          if (oatt && oatt.clientId === msg.target) {
+            other.serializeAttachment({ ...oatt, approved: true });
+            this.send(other, stateFrame(this.roomId, res.state));
+          }
+        }
+        ws.serializeAttachment(att);
+        this.broadcast(stateFrame(this.roomId, res.state));
+        return;
+      }
+      case 'deny': {
+        if (!att.joined || !att.approved) {
+          this.close(ws, 4400, 'join-first');
+          return;
+        }
+        const res = this.core.deny(this.roomId, att.clientId, msg.target);
+        if (!res.ok) return;
+        for (const other of this.ctx.getWebSockets()) {
+          const oatt = other.deserializeAttachment() as Attachment | null;
+          if (oatt && oatt.clientId === msg.target) this.close(other, 4403, 'join-denied');
+        }
+        ws.serializeAttachment(att);
+        this.broadcast(stateFrame(this.roomId, res.state));
+        return;
+      }
       default: {
         // Relay (chat, ice-offer/answer/candidate, control, client state): validated, forward to peer.
-        if (!att.joined) {
+        // Knocking waiters can't relay until admitted.
+        if (!att.joined || !att.approved) {
           this.close(ws, 4400, 'join-first');
           return;
         }

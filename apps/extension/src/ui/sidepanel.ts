@@ -41,6 +41,8 @@ interface PanelState {
   driftMs: number | null;
   control: 'both' | 'me';
   chat: ChatMsg[];
+  knock: { clientId: string; name: string } | null;
+  waiting: boolean;
 }
 
 const state: PanelState = {
@@ -52,6 +54,8 @@ const state: PanelState = {
   driftMs: null,
   control: 'both',
   chat: [],
+  knock: null,
+  waiting: false,
 };
 
 function el<T extends HTMLElement>(id: string): T {
@@ -109,6 +113,19 @@ function paintAll() {
   paintWatching();
   paintDrift();
   paintChat();
+  paintKnock();
+}
+
+function paintKnock() {
+  const banner = document.getElementById('knockbanner');
+  const text = document.getElementById('knocktext');
+  if (!banner || !text) return;
+  if (!state.knock) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  text.textContent = `${state.knock.name} wants to join.`;
 }
 
 function pushChat(from: 'you' | 'them', text: string) {
@@ -132,6 +149,13 @@ function mount() {
       <div class="room-head">
         <span id="room" class="room-id">Room —</span>
         <span id="chip">${renderChip('noplayer')}</span>
+      </div>
+      <div class="knock-banner" id="knockbanner" hidden>
+        <span id="knocktext"></span>
+        <span class="knock-actions">
+          <button id="knock-yes" class="btn btn-primary btn-inline" type="button">Let in</button>
+          <button id="knock-no" class="btn btn-ghost btn-inline" type="button">Decline</button>
+        </span>
       </div>
       <div class="invite-row" id="inviterow" hidden>
         <span class="invite-link" id="invitelink"></span>
@@ -200,9 +224,28 @@ function mount() {
     state.roomId = null;
     state.peer = null;
     state.status = 'noplayer';
+    state.knock = null;
     paintAll();
     el<HTMLElement>('toast').textContent = 'You left the room.';
   });
+
+  const decide = (admit: boolean) => async () => {
+    const target = state.knock?.clientId;
+    if (!target) return;
+    try {
+      await chrome.runtime.sendMessage({ cmd: admit ? 'duet:admit' : 'duet:deny', target });
+      el<HTMLElement>('toast').textContent = admit
+        ? `${state.knock?.name ?? 'They'}'s in.`
+        : 'Declined.';
+    } catch {
+      el<HTMLElement>('toast').textContent = "Couldn't reach the room. Try again.";
+      return;
+    }
+    state.knock = null;
+    paintKnock();
+  };
+  el<HTMLButtonElement>('knock-yes').addEventListener('click', decide(true));
+  el<HTMLButtonElement>('knock-no').addEventListener('click', decide(false));
 
   // Forward-compatible: apply background broadcasts if/when they arrive.
   chrome.runtime.onMessage.addListener((msg) => {
@@ -213,9 +256,33 @@ function mount() {
       mineTitle?: string;
       peerTitle?: string;
       driftMs?: number;
+      waiting?: boolean;
+      knock?: { clientId?: string; name?: string };
+      state?: { rev?: number };
+      roomId?: string;
       chat?: { from: 'you' | 'them'; text: string };
     };
     if (m.cmd !== 'duet:state') return;
+    if (m.knock && typeof m.knock.clientId === 'string') {
+      state.knock = { clientId: m.knock.clientId, name: m.knock.name ?? 'Someone' };
+      paintKnock();
+      el<HTMLElement>('toast').textContent = `${state.knock.name} wants to join.`;
+      return;
+    }
+    if (m.waiting) {
+      state.waiting = true;
+      el<HTMLElement>('toast').textContent = 'Knocking… the host lets you in.';
+      return;
+    }
+    if (m.state && typeof m.roomId === 'string') {
+      state.roomId = m.roomId;
+      state.status = 'synced';
+      state.waiting = false;
+      state.peer = state.peer ?? 'Guest';
+      paintAll();
+      el<HTMLElement>('toast').textContent = "You're in.";
+      return;
+    }
     if (m.status && m.status in CHIPS) {
       state.status = m.status;
       paintChip();

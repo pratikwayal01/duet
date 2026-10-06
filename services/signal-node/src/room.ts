@@ -10,7 +10,7 @@
 // 1009 over 16KB. Unknown `t` is ignored (forward compat).
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
-import { MAX_PARTICIPANTS, RoomCore } from '@duet/room-core';
+import { CODE_ALPHABET, CODE_LENGTH, MAX_PARTICIPANTS, RoomCore } from '@duet/room-core';
 import type { PlaybackState, Result } from '@duet/room-core';
 import { PROTOCOL_VERSION, parseMessage } from '@duet/protocol';
 import type { Message } from '@duet/protocol';
@@ -20,7 +20,7 @@ export { MAX_PARTICIPANTS as ROOM_CAP };
 const WS_MSGS_PER_WINDOW = 100;
 const WS_WINDOW_MS = 10_000;
 
-type MemberResult = Result<{ role: 'host' | 'guest'; state: PlaybackState }>;
+type MemberResult = Result<{ role: 'host' | 'guest'; state?: PlaybackState; knocking?: boolean }>;
 
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -73,6 +73,15 @@ export interface TurnConfig {
   dailyCap: number;
 }
 
+// Metered's published public demo relay (no signup, no keys). Best-effort
+// shared capacity for a hobby project — set TURN_URLS/TURN_SECRET for
+// anything serious. STUN needs no credentials at all.
+export const PUBLIC_RELAY = {
+  urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
+  username: 'openrelayproject',
+  password: 'openrelayproject',
+};
+
 export function mintIceBody(cfg: TurnConfig, quota: { ok: boolean; count: number }): { status: number; body: unknown } {
   if (cfg.urls.length === 0) {
     return {
@@ -117,9 +126,21 @@ function stateFrame(roomId: string, state: PlaybackState): Message {
   return { v: PROTOCOL_VERSION, t: 'state', id: randomUUID(), roomId, state };
 }
 
+function knockFrame(roomId: string, clientId: string, name?: string): Message {
+  return {
+    v: PROTOCOL_VERSION, t: 'knock', id: randomUUID(), roomId, clientId,
+    ...(name ? { name } : {}),
+  };
+}
+
+function knockingFrame(roomId: string): Message {
+  return { v: PROTOCOL_VERSION, t: 'knocking', id: randomUUID(), roomId };
+}
+
 interface Peer {
   clientId: string;
   joined: boolean;
+  approved: boolean;
   ws: WebSocket;
   stamps: number[];
 }
@@ -134,6 +155,10 @@ export class RoomRegistry {
   private peers = new Map<WebSocket, { roomId: string; peer: Peer }>();
   // day -> issued count (resets on deploy/restart; CF adapter is the durable one)
   private iceCount = { day: '', count: 0 };
+  // Pending short invite codes for lazy rooms (created on first hello).
+  // Entries die after 10 min or when consumed; the room itself stays lazy.
+  private pendingCodes = new Map<string, { roomId: string; createdAt: number }>();
+  private static readonly CODE_TTL_MS = 10 * 60 * 1000;
 
   constructor() {
     // Housekeeping for departed seats / rate windows (RoomCore has no timers).
@@ -145,6 +170,34 @@ export class RoomRegistry {
     return this.core.memberCount(roomId);
   }
 
+  /** Mint a lazy room id + short invite code (room materializes on first hello). */
+  mintPending(): { id: string; code: string } {
+    this.sweepCodes();
+    const id = newRoomId();
+    let code = '';
+    for (let i = 0; i < 50; i++) {
+      code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
+      if (!this.pendingCodes.has(code)) break;
+    }
+    this.pendingCodes.set(code, { roomId: id, createdAt: Date.now() });
+    return { id, code };
+  }
+
+  /** Resolve a short code (or pass a full id straight through). */
+  resolveRoom(idOrCode: string): string | null {
+    const upper = idOrCode.toUpperCase();
+    if (isRoomId(upper)) return upper;
+    this.sweepCodes();
+    return this.pendingCodes.get(upper)?.roomId ?? null;
+  }
+
+  private sweepCodes(): void {
+    const now = Date.now();
+    for (const [code, p] of this.pendingCodes) {
+      if (now - p.createdAt > RoomRegistry.CODE_TTL_MS) this.pendingCodes.delete(code);
+    }
+  }
+
   add(roomId: string, ws: WebSocket, clientId: string): void {
     this.core.purgeExpired();
     let set = this.peersByRoom.get(roomId);
@@ -153,7 +206,7 @@ export class RoomRegistry {
       this.peersByRoom.set(roomId, set);
     }
     set.add(ws);
-    this.peers.set(ws, { roomId, peer: { clientId, joined: false, ws, stamps: [] } });
+    this.peers.set(ws, { roomId, peer: { clientId, joined: false, approved: false, ws, stamps: [] } });
   }
 
   remove(ws: WebSocket): void {
@@ -221,6 +274,15 @@ export class RoomRegistry {
         }
         peer.clientId = newId;
         peer.joined = true;
+        // Second hello in an occupied room knocks: waiter gets `knocking`,
+        // approved members get `knock`, no state leaks to the waiter.
+        if (res.knocking || !res.state) {
+          peer.approved = false;
+          this.sendTo(ws, knockingFrame(roomId));
+          this.sendRoom(roomId, knockFrame(roomId, newId, msg.name), ws);
+          return;
+        }
+        peer.approved = true;
         this.sendTo(ws, stateFrame(roomId, res.state));
         this.sendRoom(roomId, stateFrame(roomId, res.state), ws); // resync peer
         return;
@@ -232,7 +294,7 @@ export class RoomRegistry {
         return;
       }
       case 'intent': {
-        if (!peer.joined) {
+        if (!peer.joined || !peer.approved) {
           ws.close(4400, 'join-first');
           return;
         }
@@ -259,9 +321,38 @@ export class RoomRegistry {
       }
       case 'pong':
         return; // client echoing; nothing to do
+      case 'admit': {
+        if (!peer.joined || !peer.approved) {
+          ws.close(4400, 'join-first');
+          return;
+        }
+        const res = this.core.admit(roomId, peer.clientId, msg.target);
+        if (!res.ok) return; // not-host / not-knocking: ignore
+        const targetWs = this.findWs(roomId, msg.target);
+        if (targetWs) {
+          const entry = this.peers.get(targetWs);
+          if (entry) entry.peer.approved = true;
+          this.sendTo(targetWs, stateFrame(roomId, res.state));
+        }
+        this.sendRoom(roomId, stateFrame(roomId, res.state));
+        return;
+      }
+      case 'deny': {
+        if (!peer.joined || !peer.approved) {
+          ws.close(4400, 'join-first');
+          return;
+        }
+        const res = this.core.deny(roomId, peer.clientId, msg.target);
+        if (!res.ok) return;
+        const targetWs = this.findWs(roomId, msg.target);
+        if (targetWs) targetWs.close(4403, 'join-denied');
+        this.sendRoom(roomId, stateFrame(roomId, res.state));
+        return;
+      }
       default: {
         // Relay (chat, ice-offer/answer/candidate, control, client state): validated, forward to peer.
-        if (!peer.joined) {
+        // Knocking waiters can't relay until admitted.
+        if (!peer.joined || !peer.approved) {
           ws.close(4400, 'join-first');
           return;
         }
@@ -271,8 +362,7 @@ export class RoomRegistry {
     }
   }
 
-  takeIceQuota(cap: number): { ok: boolean; count: number } {
-    const day = new Date().toISOString().slice(0, 10);
+  takeIceQuota(cap: number): { ok: boolean; count: number } {    const day = new Date().toISOString().slice(0, 10);
     if (this.iceCount.day !== day) this.iceCount = { day, count: 0 };
     if (this.iceCount.count >= cap) return { ok: false, count: this.iceCount.count };
     this.iceCount.count += 1;
@@ -281,6 +371,13 @@ export class RoomRegistry {
 
   private sendTo(ws: WebSocket, frame: Message): void {
     if (open(ws)) ws.send(JSON.stringify(frame));
+  }
+
+  private findWs(roomId: string, clientId: string): WebSocket | null {
+    for (const ws of this.peersByRoom.get(roomId) ?? []) {
+      if (this.peers.get(ws)?.peer.clientId === clientId) return ws;
+    }
+    return null;
   }
 
   private sendRoom(roomId: string, frame: Message, except?: WebSocket): void {

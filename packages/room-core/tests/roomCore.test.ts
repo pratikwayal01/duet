@@ -7,11 +7,11 @@ function clock() {
 }
 
 describe("2-participant cap", () => {
-  it("lets host + guest in, rejects a third with room-full", () => {
+  it("lets host in, knocks the second, rejects a third with room-full", () => {
     const c = clock();
     const rooms = new RoomCore({ now: c.now });
     expect(rooms.createRoom("r", "alice")).toMatchObject({ ok: true, role: "host" });
-    expect(rooms.joinRoom("r", "bob")).toMatchObject({ ok: true, role: "guest" });
+    expect(rooms.joinRoom("r", "bob")).toMatchObject({ ok: true, role: "guest", knocking: true });
     expect(rooms.joinRoom("r", "mallory")).toEqual({ ok: false, error: "room-full" });
     expect(rooms.memberCount("r")).toBe(2);
   });
@@ -22,7 +22,7 @@ describe("2-participant cap", () => {
     rooms.createRoom("r", "alice");
     rooms.joinRoom("r", "bob");
     rooms.leaveRoom("r", "bob");
-    expect(rooms.joinRoom("r", "mallory")).toMatchObject({ ok: true, role: "guest" });
+    expect(rooms.joinRoom("r", "mallory")).toMatchObject({ ok: true, role: "guest", knocking: true });
   });
 
   it("returns not-found for unknown rooms and duplicate creates fail", () => {
@@ -33,12 +33,56 @@ describe("2-participant cap", () => {
   });
 });
 
+describe("knock-to-join and host approval", () => {
+  it("knocks the second joiner without leaking state; admit lets them in", () => {
+    const c = clock();
+    const rooms = new RoomCore({ now: c.now });
+    rooms.createRoom("r", "alice");
+    const knock = rooms.joinRoom("r", "bob", "Bob");
+    expect(knock).toMatchObject({ ok: true, role: "guest", knocking: true });
+    expect("state" in knock).toBe(false);
+    // Knocking guests can't drive playback.
+    expect(rooms.sendIntent("r", "bob", { op: "play", lastSeenRev: 0 })).toEqual({
+      ok: false,
+      error: "not-in-room",
+    });
+    expect(rooms.admit("r", "alice", "bob")).toMatchObject({ ok: true, state: { rev: 0 } });
+    expect(rooms.sendIntent("r", "bob", { op: "play", lastSeenRev: 0 }).ok).toBe(true);
+  });
+
+  it("only the host can admit; only knockers can be admitted", () => {
+    const c = clock();
+    const rooms = new RoomCore({ now: c.now });
+    rooms.createRoom("r", "alice");
+    rooms.joinRoom("r", "bob");
+    expect(rooms.admit("r", "bob", "bob")).toEqual({ ok: false, error: "not-in-room" });
+    expect(rooms.admit("r", "alice", "mallory")).toEqual({ ok: false, error: "not-knocking" });
+    expect(rooms.admit("r", "alice", "alice")).toEqual({ ok: false, error: "not-knocking" });
+  });
+
+  it("deny removes the knocker; a rejoin knocks again instead of restoring", () => {
+    const c = clock();
+    const rooms = new RoomCore({ now: c.now });
+    rooms.createRoom("r", "alice");
+    rooms.joinRoom("r", "bob");
+    expect(rooms.deny("r", "alice", "bob").ok).toBe(true);
+    expect(rooms.memberCount("r")).toBe(1);
+    expect(rooms.sendIntent("r", "bob", { op: "play", lastSeenRev: 0 })).toEqual({
+      ok: false,
+      error: "not-in-room",
+    });
+    expect(rooms.joinRoom("r", "bob")).toMatchObject({ ok: true, knocking: true });
+    expect(rooms.deny("r", "bob", "bob")).toEqual({ ok: false, error: "not-in-room" });
+  });
+});
+
 describe("roles and controller lock", () => {
   it("defaults to both-can-control; host lock blocks guests but not host", () => {
     const c = clock();
     const rooms = new RoomCore({ now: c.now });
     rooms.createRoom("r", "alice");
     rooms.joinRoom("r", "bob");
+    rooms.admit("r", "alice", "bob");
     expect(rooms.sendIntent("r", "bob", { op: "play", lastSeenRev: 0 }).ok).toBe(true);
     expect(rooms.setControllerLock("r", "bob", "host")).toEqual({ ok: false, error: "not-host" });
     expect(rooms.setControllerLock("r", "alice", "host").ok).toBe(true);
@@ -66,6 +110,7 @@ describe("intent handling", () => {
     const rooms = new RoomCore({ now: c.now });
     rooms.createRoom("r", "alice");
     rooms.joinRoom("r", "bob");
+    rooms.admit("r", "alice", "bob");
     c.advance(10); // well inside the 150ms window
     expect(rooms.sendIntent("r", "alice", { op: "pause", lastSeenRev: 0 }).ok).toBe(true);
     c.advance(10);
@@ -115,6 +160,7 @@ describe("rate limits", () => {
     const rooms = new RoomCore({ now: c.now });
     rooms.createRoom("r", "alice");
     rooms.joinRoom("r", "bob");
+    rooms.admit("r", "alice", "bob");
     for (let i = 0; i < 20; i++) rooms.sendIntent("r", "alice", { op: "seek", lastSeenRev: i, position: i });
     expect(rooms.sendIntent("r", "bob", { op: "play", lastSeenRev: 20 }).ok).toBe(true);
   });
@@ -136,6 +182,7 @@ describe("idle expiry and rejoin", () => {
     const rooms = new RoomCore({ now: c.now });
     rooms.createRoom("r", "alice");
     rooms.joinRoom("r", "bob");
+    rooms.admit("r", "alice", "bob");
     rooms.sendIntent("r", "alice", { op: "play", lastSeenRev: 0, position: 42 });
     rooms.leaveRoom("r", "bob");
     c.advance(REJOIN_WINDOW_MS - 1000);
@@ -147,6 +194,7 @@ describe("idle expiry and rejoin", () => {
     const rooms = new RoomCore({ now: c.now });
     rooms.createRoom("r", "alice");
     rooms.joinRoom("r", "bob");
+    rooms.admit("r", "alice", "bob");
     rooms.leaveRoom("r", "bob");
     c.advance(REJOIN_WINDOW_MS + 1);
     rooms.joinRoom("r", "mallory"); // takes the free guest seat

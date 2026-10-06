@@ -31,6 +31,8 @@ export type RoomError =
   | "not-in-room"
   | "not-host"
   | "not-controller"
+  | "not-approved"
+  | "not-knocking"
   | "rate-limited"
   | "bad-intent";
 
