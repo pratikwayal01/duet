@@ -21,6 +21,8 @@ type SyncTone = 'ok' | 'warn' | 'danger' | 'muted';
 interface RoomSession {
   roomId: string;
   url?: string;
+  base?: string | null;
+  secret?: string | null;
   // ponytail: signaling (M2) will add peer/sync fields here; until then room
   // presence alone drives the UI and sync details render honest stubs.
   status?: 'connected' | 'reconnecting';
@@ -196,7 +198,7 @@ function wireHome(service: string | null): void {
       const base = await getBase();
       const roomId = await mintRoom(base, await getApiKey());
       const secret = makeSecret();
-      const res = await send('duet:join', { url: signalUrl(base, roomId), roomId });
+      const res = await send('duet:join', { url: signalUrl(base, roomId), roomId, base, secret });
       if (res?.ok) {
         const link = inviteUrl(base, roomId, secret);
         try {
@@ -246,6 +248,10 @@ function roomView(room: RoomSession): string {
       <span class="room-id" id="roomcode"></span>
       <span class="chip" data-tone="${chip.tone}"><i class="chip-dot" aria-hidden="true">${chip.dot}</i>${chip.text}</span>
     </div>
+    <div class="invite-row" id="inviterow" hidden>
+      <span class="invite-link" id="invitelink"></span>
+      <button id="copyinvite" class="btn btn-ghost btn-inline" type="button">Copy invite</button>
+    </div>
     <section class="section" aria-label="Now watching">
       <h2>Watching</h2>
       <p class="watch-title" id="watchtitle">${room.title ?? 'Open a video to begin'}</p>
@@ -277,6 +283,24 @@ function wireRoom(room: RoomSession): void {
   void initTheme(el<HTMLButtonElement>('theme'));
   wireShell();
   el<HTMLElement>('roomcode').textContent = room.roomId;
+  if (room.base && room.secret) {
+    const link = inviteUrl(room.base, room.roomId, room.secret);
+    const row = document.getElementById('inviterow');
+    const span = document.getElementById('invitelink');
+    if (row && span) {
+      row.hidden = false;
+      span.textContent = link.replace(/^https?:\/\//, '');
+      span.setAttribute('title', link);
+      el<HTMLButtonElement>('copyinvite').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(link);
+          setStatus('Invite link copied — send it to them.');
+        } catch {
+          setStatus(link);
+        }
+      });
+    }
+  }
   if (room.episode) el<HTMLElement>('watchep').textContent = room.episode;
   if (room.peerName) {
     const peerLine = document.getElementById('peerline');

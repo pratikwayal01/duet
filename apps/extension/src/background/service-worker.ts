@@ -26,7 +26,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-  const m = msg as { cmd?: string; url?: string; roomId?: string };
+  const m = msg as { cmd?: string; url?: string; roomId?: string; base?: string; secret?: string };
   if (m.cmd === 'duet:join' && m.url && m.roomId) {
     getClient()
       .connect(m.url, m.roomId)
@@ -42,7 +42,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
           /* default stands */
         }
         getClient().send({ v: 1, t: 'hello', id: crypto.randomUUID(), clientId, name });
-        await chrome.storage.session.set({ 'duet:room': { roomId: m.roomId, url: m.url, clientId } });
+        await chrome.storage.session.set({
+          'duet:room': { roomId: m.roomId, url: m.url, clientId, base: m.base ?? null, secret: m.secret ?? null },
+        });
         setToolbarState('waiting');
         reply({ ok: true });
       })

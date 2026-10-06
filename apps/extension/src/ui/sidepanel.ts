@@ -133,6 +133,10 @@ function mount() {
         <span id="room" class="room-id">Room —</span>
         <span id="chip">${renderChip('noplayer')}</span>
       </div>
+      <div class="invite-row" id="inviterow" hidden>
+        <span class="invite-link" id="invitelink"></span>
+        <button id="copyinvite" class="btn btn-ghost btn-inline" type="button">Copy invite</button>
+      </div>
       <div id="presence" class="pills" aria-label="Who's here"></div>
       <section class="section" aria-label="Now watching">
         <h2>Watching</h2>
@@ -236,11 +240,29 @@ function mount() {
   });
 
   void chrome.storage.session.get('duet:room').then((got) => {
-    const room = got['duet:room'] as { roomId?: string } | undefined;
+    const room = got['duet:room'] as { roomId?: string; base?: string | null; secret?: string | null } | undefined;
     if (room?.roomId) {
       state.roomId = room.roomId;
       state.status = 'waiting';
       paintAll();
+      if (room.base && room.secret) {
+        const link = `${room.base.replace(/\/$/, '')}/r/${room.roomId}#${room.secret}`;
+        const row = document.getElementById('inviterow');
+        const span = document.getElementById('invitelink');
+        if (row && span) {
+          row.hidden = false;
+          span.textContent = link.replace(/^https?:\/\//, '');
+          span.setAttribute('title', link);
+          document.getElementById('copyinvite')?.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(link);
+              el<HTMLElement>('toast').textContent = 'Invite link copied — send it to them.';
+            } catch {
+              el<HTMLElement>('toast').textContent = link;
+            }
+          });
+        }
+      }
     }
   });
 
