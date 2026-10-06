@@ -4,7 +4,9 @@ WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json ./
 COPY packages ./packages
 COPY services/signal-node ./services/signal-node
-RUN npm ci --workspace @duet/signal-node --include-workspace-root && \
+COPY apps/web ./apps/web
+RUN npm ci --workspace @duet/signal-node --workspace @duet/web --include-workspace-root && \
+    npm run build --workspace @duet/web && \
     npm run build --workspace @duet/signal-node
 ENV NODE_ENV=production PORT=8787
 EXPOSE 8787

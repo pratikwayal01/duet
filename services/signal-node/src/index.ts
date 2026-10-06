@@ -3,6 +3,8 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize, sep } from 'node:path';
 import { WebSocketServer } from 'ws';
 import {
   MAX_MSG_BYTES,
@@ -89,6 +91,36 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+// Static landing + room pages (same origin as the socket, so no CORS/VITE
+// config needed). Served only when the web app was built alongside —
+// WEB_DIST overrides, default is the monorepo apps/web/dist.
+const WEB_DIST = process.env.WEB_DIST ?? new URL('../../../apps/web/dist', import.meta.url).pathname;
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+};
+
+async function serveWeb(pathname: string, res: ServerResponse): Promise<boolean> {
+  // SPA routes (/new, /r/:id) fall back to index.html; traversal-safe join.
+  const route = pathname === '/' || pathname === '/new' || pathname.startsWith('/r/') ? '/index.html' : pathname;
+  const file = normalize(join(WEB_DIST, route));
+  if (!file.startsWith(WEB_DIST + sep) && file !== join(WEB_DIST, 'index.html')) return false;
+  try {
+    const body = await readFile(file);
+    res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=300' });
+    res.end(body);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   cors(req, res);
@@ -96,6 +128,13 @@ const server = createServer((req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
+    void serveWeb(url.pathname, res).then((served) => {
+      if (!served) json(res, 404, { error: 'not-found' });
+    });
     return;
   }
 

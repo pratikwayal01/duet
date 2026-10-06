@@ -6,7 +6,7 @@ services:
     name: duet-signal-node
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build --workspace @duet/signal-node
+    buildCommand: npm ci --include=dev && npm run build --workspace @duet/web && npm run build --workspace @duet/signal-node && ls apps/web/dist services/signal-node/dist
     startCommand: npm start --workspace @duet/signal-node
     healthCheckPath: /api/health
     envVars:

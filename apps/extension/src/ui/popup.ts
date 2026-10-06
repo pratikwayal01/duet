@@ -302,6 +302,15 @@ function roomView(room: RoomSession): string {
       </div>
       <button id="leave" class="btn btn-ghost leave" type="button">Leave room</button>
     </section>
+    <section class="section" aria-label="Chat">
+      <h2>Chat</h2>
+      <ol id="chatlist" class="chat-list" aria-label="Messages"></ol>
+      <form id="chatform" class="join field">
+        <input id="chatmsg" type="text" placeholder="Type a message…" aria-label="Type a message"
+          autocomplete="off" maxlength="2000" />
+        <button class="btn btn-secondary" type="submit" aria-label="Send message">Send</button>
+      </form>
+    </section>
     ${peer ? `<p class="chip" data-tone="ok"><i class="chip-dot" aria-hidden="true">●</i><span id="peerline"></span></p>` : ''}`);
 }
 
@@ -386,6 +395,35 @@ function wireRoom(room: RoomSession): void {
   el<HTMLButtonElement>('leave').addEventListener('click', async () => {
     await send('duet:leave');
     await boot();
+  });
+
+  // Mini chat lives here so nobody has to hunt for the side panel.
+  // History is per-popup-open (side panel keeps its own); transport is the room socket.
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  const addChat = (mine: boolean, text: string): void => {
+    const list = document.getElementById('chatlist');
+    if (!list) return;
+    const li = document.createElement('li');
+    li.className = mine ? 'chat-row chat-row-own' : 'chat-row';
+    li.innerHTML = `<div class="bubble ${mine ? 'bubble-own' : 'bubble-peer'}">${esc(text)}</div>`;
+    list.appendChild(li);
+    while (list.children.length > 50) list.firstChild?.remove();
+    list.scrollTop = list.scrollHeight;
+  };
+  el<HTMLFormElement>('chatform').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const input = el<HTMLInputElement>('chatmsg');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    addChat(true, text);
+    const res = await send('duet:chat-send', { text });
+    if (!res?.ok) setStatus(res?.error ?? "Couldn't send.");
+  });
+  chrome.runtime.onMessage.addListener((msg) => {
+    const m = msg as { cmd?: string; chat?: { from?: string; text?: string } };
+    if (m.cmd === 'duet:state' && typeof m.chat?.text === 'string') addChat(false, m.chat.text);
   });
 
   if (room.peerName && !room.title) setStatus(`${room.peerName}'s here.`);

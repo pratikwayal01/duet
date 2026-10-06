@@ -8,6 +8,26 @@ let client: RoomClient | null = null;
 let joinedRoomId: string | null = null;
 
 // Last broadcast state: powers duet:resync without a round-trip.
+// Mirrored to chrome.storage.session because the worker suspends and
+// module memory (including this) is wiped — without the mirror, resync
+// says "nothing to catch up to" after any idle stretch.
+type CachedState = { position: number; playing: boolean; rate: number; refServerTime: number };
+async function readLastState(): Promise<CachedState | null> {
+  if (lastState) return lastState;
+  try {
+    const v = (await chrome.storage.session.get('duet:last-state')) as Record<string, unknown>;
+    const s = v['duet:last-state'] as CachedState | undefined;
+    if (s && typeof s.position === 'number') {
+      lastState = s;
+      return s;
+    }
+  } catch {
+    /* no stored state */
+  }
+  return null;
+}
+
+// Last broadcast state: powers duet:resync without a round-trip.
 // Never persisted — rebuilt from the socket on every join.
 let lastState: { position: number; playing: boolean; rate: number; refServerTime: number } | null = null;
 
@@ -27,8 +47,14 @@ function getClient(): RoomClient {
         }
         if (m?.t === 'state' && m.state && typeof m.state.position === 'number') {
           lastState = { ...m.state } as typeof lastState;
+          void chrome.storage.session.set({ 'duet:last-state': lastState }).catch(() => {});
           // Side panel listens for duet:state; no receiver = rejected promise.
           void chrome.runtime.sendMessage({ cmd: 'duet:state', roomId: joinedRoomId, state: m.state }).catch(() => {});
+        } else if (m?.t === 'chat' && typeof (m as { body?: unknown }).body === 'string') {
+          const c = m as { from?: string; body: string };
+          void chrome.runtime
+            .sendMessage({ cmd: 'duet:state', roomId: joinedRoomId, chat: { from: c.from ?? 'them', text: c.body } })
+            .catch(() => {});
         } else if (m?.t === 'knock' && typeof m.clientId === 'string') {
           void chrome.runtime
             .sendMessage({ cmd: 'duet:state', roomId: joinedRoomId, knock: { clientId: m.clientId, name: m.name ?? 'Someone' } })
@@ -94,6 +120,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (m.cmd === 'duet:leave') {
     lastState = null;
     joinedRoomId = null;
+    void chrome.storage.session.remove('duet:last-state').catch(() => {});
     getClient()
       .close()
       .then(() => {
@@ -105,16 +132,51 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
   if (m.cmd === 'duet:resync' && m.tabId) {
     const tabId = Number(m.tabId);
-    if (!lastState || !Number.isFinite(tabId)) {
-      reply({ ok: false, error: 'Nothing to catch up to yet — play something first.' });
+    if (!Number.isFinite(tabId)) {
+      reply({ ok: false, error: 'Open the video tab first.' });
       return true;
     }
-    const s = lastState;
-    const position = Math.max(0, s.position + (s.playing ? ((getClient().serverNow() - s.refServerTime) / 1000) * s.rate : 0));
-    chrome.tabs
-      .sendMessage(tabId, { cmd: 'duet:apply-state', position, playing: s.playing })
-      .then(() => reply({ ok: true }))
-      .catch(() => reply({ ok: false, error: 'Player not listening — open the video tab first.' }));
+    readLastState()
+      .then((cached) => {
+        if (!cached) {
+          reply({ ok: false, error: 'Nothing to catch up to yet — play something first.' });
+          return;
+        }
+        const s = cached;
+        const position = Math.max(0, s.position + (s.playing ? ((getClient().serverNow() - s.refServerTime) / 1000) * s.rate : 0));
+        chrome.tabs
+          .sendMessage(tabId, { cmd: 'duet:apply-state', position, playing: s.playing })
+          .then(() => reply({ ok: true }))
+          .catch(() => reply({ ok: false, error: 'Player not listening — open the video tab first.' }));
+      })
+      .catch(() => reply({ ok: false, error: 'Nothing to catch up to yet.' }));
+    return true;
+  }
+  if (m.cmd === 'duet:chat-send' && typeof (msg as { text?: unknown }).text === 'string') {
+    const text = ((msg as { text?: string }).text ?? '').trim().slice(0, 2000);
+    if (!text) {
+      reply({ ok: false, error: 'Empty message.' });
+      return true;
+    }
+    chrome.storage.session
+      .get('duet:room')
+      .then(async (v) => {
+        const room = (v as Record<string, unknown>)['duet:room'] as { roomId?: string } | undefined;
+        let name = 'Guest';
+        try {
+          const n = (await chrome.storage.local.get('duet:name'))['duet:name'];
+          if (typeof n === 'string' && n !== '') name = n.slice(0, 64);
+        } catch {
+          /* default stands */
+        }
+        if (!room?.roomId) {
+          reply({ ok: false, error: 'Not in a room.' });
+          return;
+        }
+        getClient().send({ v: 1, t: 'chat', id: crypto.randomUUID(), roomId: room.roomId, from: name, body: text, ts: Date.now() });
+        reply({ ok: true });
+      })
+      .catch(() => reply({ ok: false, error: 'Not in a room.' }));
     return true;
   }
   if (m.cmd === 'duet:admit' || m.cmd === 'duet:deny') {
