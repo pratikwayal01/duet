@@ -109,7 +109,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
           };
         });
         await chrome.storage.session.set({
-          'duet:room': { roomId: m.roomId, url: m.url, clientId, base: m.base ?? null, secret: m.secret ?? null },
+          'duet:room': {
+            roomId: m.roomId,
+            url: m.url,
+            clientId,
+            base: m.base ?? null,
+            secret: m.secret ?? null,
+            tabId: m.tabId ?? null,
+          },
         });
         setToolbarState('waiting');
         reply({ ok: true, knocking });
@@ -130,26 +137,68 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       });
     return true;
   }
-  if (m.cmd === 'duet:resync' && m.tabId) {
-    const tabId = Number(m.tabId);
-    if (!Number.isFinite(tabId)) {
-      reply({ ok: false, error: 'Open the video tab first.' });
+  // Probe for a listening content script. Never throws: true = present.
+  const pingTab = async (tabId: number): Promise<boolean> => {
+    try {
+      await chrome.tabs.sendMessage(tabId, { cmd: 'duet:ping' });
       return true;
+    } catch {
+      return false;
     }
-    readLastState()
-      .then((cached) => {
-        if (!cached) {
-          reply({ ok: false, error: 'Nothing to catch up to yet — play something first.' });
-          return;
-        }
-        const s = cached;
-        const position = Math.max(0, s.position + (s.playing ? ((getClient().serverNow() - s.refServerTime) / 1000) * s.rate : 0));
-        chrome.tabs
-          .sendMessage(tabId, { cmd: 'duet:apply-state', position, playing: s.playing })
-          .then(() => reply({ ok: true }))
-          .catch(() => reply({ ok: false, error: 'Player not listening — open the video tab first.' }));
-      })
-      .catch(() => reply({ ok: false, error: 'Nothing to catch up to yet.' }));
+  };
+
+  // Ensure the content entry is listening in tabId (declared content
+  // scripts don't run in tabs opened before install/reload). Returns a
+  // human-readable failure naming the tab when possible — never throws.
+  const ensureContent = async (tabId: number): Promise<{ ok: true } | { ok: false; error: string }> => {
+    let title = `tab ${tabId}`;
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.title) title = `“${tab.title}”`;
+    } catch {
+      return { ok: false, error: 'Video tab was closed — open the video and resync.' };
+    }
+    if (await pingTab(tabId)) return { ok: true };
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content-scripts/content.js'] });
+    } catch {
+      return { ok: false, error: `Can't reach ${title} — open the video tab and retry.` };
+    }
+    if (await pingTab(tabId)) return { ok: true };
+    return { ok: false, error: `Player not listening in ${title} — reload that tab and retry.` };
+  };
+
+  if (m.cmd === 'duet:resync') {
+    // Stored video tab first (captured on Start/Join), caller hint as fallback.
+    void (async () => {
+      const stored = await chrome.storage.session
+        .get('duet:room')
+        .then((v) => ((v as Record<string, unknown>)['duet:room'] as { tabId?: string } | undefined)?.tabId)
+        .catch(() => undefined);
+      const tabId = Number(stored ?? m.tabId ?? NaN);
+      if (!Number.isFinite(tabId)) {
+        reply({ ok: false, error: 'No video tab on record — open the video and rejoin.' });
+        return;
+      }
+      const ensured = await ensureContent(tabId);
+      if (!ensured.ok) {
+        reply({ ok: false, error: ensured.error });
+        return;
+      }
+      const cached = await readLastState().catch(() => null);
+      if (!cached) {
+        reply({ ok: false, error: 'Nothing to catch up to yet — play something first.' });
+        return;
+      }
+      const s = cached;
+      const position = Math.max(0, s.position + (s.playing ? ((getClient().serverNow() - s.refServerTime) / 1000) * s.rate : 0));
+      try {
+        await chrome.tabs.sendMessage(tabId, { cmd: 'duet:apply-state', position, playing: s.playing });
+        reply({ ok: true });
+      } catch {
+        reply({ ok: false, error: 'Player went quiet — reload the video tab and retry.' });
+      }
+    })();
     return true;
   }
   if (m.cmd === 'duet:chat-send' && typeof (msg as { text?: unknown }).text === 'string') {

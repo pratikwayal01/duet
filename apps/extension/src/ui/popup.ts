@@ -100,6 +100,16 @@ async function activeTabUrl(): Promise<string | null> {
   }
 }
 
+// The video tab is the one the popup was opened from — not "any tab".
+async function videoTabId(): Promise<number | null> {
+  try {
+    const [tab] = (await chrome.tabs.query({ active: true, lastFocusedWindow: true })) ?? [];
+    return tab?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function wireShell(): void {
   try {
     const stamp = document.getElementById('buildstamp');
@@ -217,7 +227,14 @@ function wireHome(service: string | null): void {
       const minted = await mintRoom(base, await getApiKey());
       const roomId = minted.id;
       const secret = makeSecret();
-      const res = await send('duet:join', { url: signalUrl(base, roomId), roomId, base, secret });
+      const tabId = await videoTabId();
+      const res = await send('duet:join', {
+        url: signalUrl(base, roomId),
+        roomId,
+        base,
+        secret,
+        ...(tabId != null ? { tabId: String(tabId) } : {}),
+      });
       if (res?.ok) {
         // Persist the short code for display (worker owns the rest).
         try {
@@ -270,7 +287,12 @@ function wireHome(service: string | null): void {
       }
     }
     setStatus('Joining…');
-    const res = await send('duet:join', { url: signalUrl(base, roomId), roomId });
+    const tabId = await videoTabId();
+    const res = await send('duet:join', {
+      url: signalUrl(base, roomId),
+      roomId,
+      ...(tabId != null ? { tabId: String(tabId) } : {}),
+    });
     if (res?.ok) {
       await boot();
       if (res.knocking) setStatus('Knocking… the host lets you in.');
@@ -405,15 +427,8 @@ function wireRoom(room: RoomSession): void {
   el<HTMLButtonElement>('c-resync').addEventListener('click', async () => {
     setStatus('Catching up…');
     try {
-      const tabs = (chrome as unknown as {
-        tabs?: { query: (q: object) => Promise<{ id?: number }[]> };
-      }).tabs;
-      const [tab] = (await tabs?.query({ active: true, currentWindow: true })) ?? [];
-      if (tab?.id == null) {
-        setStatus('Open the video tab, then resync.');
-        return;
-      }
-      const res = await send('duet:resync', { tabId: String(tab.id) });
+      // No tab lookup here: the worker owns the stored video tabId.
+      const res = await send('duet:resync', {});
       setStatus(res?.ok ? 'Caught up.' : (res?.error ?? "Couldn't resync."));
     } catch {
       setStatus("Couldn't resync.");
